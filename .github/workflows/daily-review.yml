@@ -1,0 +1,31 @@
+name: Reporte Diario Bot
+
+on:
+  schedule:
+    - cron: '0 9 * * *'   # cada día a las 9:00 AM UTC (6:00 AM Ecuador)
+  workflow_dispatch:        # permite correrlo manualmente para probar
+
+permissions:
+  contents: read
+  issues: write             # necesario para crear issues
+
+jobs:
+  daily-review:
+    runs-on: ubuntu-latest
+
+    env:
+      GITHUB_REPO: ${{ github.repository }}   # se llena automáticamente
+
+    steps:
+      - name: Descargar repositorio
+        uses: actions/checkout@v4
+
+      - name: Configurar Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Generar y publicar reporte diario
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}   # automático, sin configurar nada
+        run: python daily_review.py
