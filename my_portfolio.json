@@ -1,0 +1,76 @@
+{
+  "_instrucciones": [
+    "Edita este archivo para registrar tus posiciones reales.",
+    "market_id: el número del mercado (lo ves en la URL de Polymarket).",
+    "side: 'YES' o 'NO' según lo que compraste.",
+    "entry_price: precio al que compraste (en centavos, ej: 0.82 = 82 centavos).",
+    "amount_usd: cuánto invertiste en dólares.",
+    "date: fecha en que entraste (YYYY-MM-DD).",
+    "ELIMINA las posiciones que ya se resolvieron."
+  ],
+
+  "capital_total": 100.00,
+
+  "posiciones": [
+    {
+      "nombre": "Bitcoin NO cae a $55k en julio",
+      "market_id": "539945",
+      "slug": "will-bitcoin-dip-to-55000-by-december-31-2026",
+      "side": "NO",
+      "entry_price": 0.82,
+      "amount_usd": 20.00,
+      "date": "2026-07-21",
+      "notas": "BTC en ~$100k, caer a $55k es casi imposible. Señal fuerte."
+    },
+    {
+      "nombre": "Bitcoin NO cae a $60k en julio",
+      "market_id": "539946",
+      "slug": "will-bitcoin-dip-to-60000-in-july",
+      "side": "NO",
+      "entry_price": 0.90,
+      "amount_usd": 15.00,
+      "date": "2026-07-21",
+      "notas": "Alta certeza, retorno bajo pero casi riesgo cero a 10 días."
+    },
+    {
+      "nombre": "Fed sube tasas 25bps en septiembre 2026",
+      "market_id": "537001",
+      "slug": "will-the-fed-increase-interest-rates-by-25-bps-after-the-september-2026",
+      "side": "YES",
+      "entry_price": 0.50,
+      "amount_usd": 20.00,
+      "date": "2026-07-21",
+      "notas": "Momentum alcista consistente 1d/1sem/1mes. Mayor retorno potencial."
+    },
+    {
+      "nombre": "Abdul El-Sayed gana primaria Michigan",
+      "market_id": "538201",
+      "slug": "will-abdul-el-sayed-win-the-2026-michigan-democratic-primary",
+      "side": "YES",
+      "entry_price": 0.84,
+      "amount_usd": 20.00,
+      "date": "2026-07-21",
+      "notas": "Momentum fuerte en los 3 períodos. Primaria en 13 días."
+    },
+    {
+      "nombre": "Harry Kane gana Ballon d'Or 2026",
+      "market_id": "536500",
+      "slug": "will-harry-kane-win-the-2026-ballon-dor",
+      "side": "YES",
+      "entry_price": 0.40,
+      "amount_usd": 15.00,
+      "date": "2026-07-21",
+      "notas": "Mayor riesgo pero mayor retorno. 101 días para que siga subiendo."
+    },
+    {
+      "nombre": "Reserva (sin invertir)",
+      "market_id": null,
+      "slug": null,
+      "side": null,
+      "entry_price": null,
+      "amount_usd": 10.00,
+      "date": null,
+      "notas": "Guardar $10 para oportunidades que aparezcan luego."
+    }
+  ]
+}
