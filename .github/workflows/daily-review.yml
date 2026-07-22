@@ -28,4 +28,7 @@ jobs:
       - name: Generar y publicar reporte diario
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}   # automático, sin configurar nada
+          SMTP_USER: ${{ secrets.SMTP_USER }}         # configurar en Settings > Secrets and variables > Actions
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}         # contraseña de aplicación, NO la contraseña normal
+          REPORT_TO: hectorhugocortez@hotmail.com
         run: python daily_review.py

@@ -32,5 +32,15 @@ jobs:
           git config --global user.email "polymarket-bot@github"
           git config --global user.name "Polymarket Bot"
           git add bot_log.jsonl || true
-          git diff --cached --quiet || git commit -m "Bot cycle $(date '+%Y-%m-%d %H:%M UTC')"
-          git push || true
+          if git diff --cached --quiet; then
+            echo "Sin cambios en el log, nada que commitear."
+            exit 0
+          fi
+          git commit -m "Bot cycle $(date '+%Y-%m-%d %H:%M UTC')"
+          for i in 1 2 3 4 5; do
+            git fetch origin main
+            git rebase origin/main && git push origin HEAD:main && break
+            echo "Push rechazado (intento $i), reintentando..."
+            git rebase --abort || true
+            sleep $((RANDOM % 5 + 1))
+          done
