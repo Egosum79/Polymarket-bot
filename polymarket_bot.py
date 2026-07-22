@@ -386,7 +386,7 @@ def place_order_real(signal: dict) -> bool:
 
 def log_signal(signal: dict, action: str, mode: str):
     entry = {
-        "timestamp": datetime.now().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
         "mode":      mode,
         "action":    action,
         **signal

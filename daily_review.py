@@ -72,6 +72,10 @@ def entries_last_24h(entries: list[dict]) -> list[dict]:
     for e in entries:
         try:
             ts = datetime.fromisoformat(e["timestamp"].replace("Z", "+00:00"))
+            if ts.tzinfo is None:
+                # Timestamps antiguos de polymarket_bot.py se guardaron sin
+                # huso horario (datetime.now() naive); se asumen UTC.
+                ts = ts.replace(tzinfo=timezone.utc)
             if ts >= cutoff:
                 result.append(e)
         except Exception:
@@ -240,7 +244,7 @@ def build_report(summary: dict, all_entries: list[dict],
             lines += [
                 f"**{i}. {dir_emoji} {direction}** — Edge: {s.get('edge',0)*100:.1f}% — "
                 f"Nuestra prob: {s.get('our_prob',0)*100:.0f}% | Mercado: {s.get('market_prob',0)*100:.0f}¢",
-                f"> {s.get('market_q','')[:120]}",
+                f"> {(s.get('market_q') or '')[:120]}",
                 "",
             ]
     else:
@@ -338,7 +342,7 @@ def build_email_html(summary: dict, all_entries: list[dict],
             parts.append(
                 f"<li>{dir_emoji} <b>{direction}</b> — Edge: {s.get('edge',0)*100:.1f}% — "
                 f"Nuestra prob: {s.get('our_prob',0)*100:.0f}% | Mercado: {s.get('market_prob',0)*100:.0f}¢<br>"
-                f"<span style='color:#555'>{s.get('market_q','')[:120]}</span></li>"
+                f"<span style='color:#555'>{(s.get('market_q') or '')[:120]}</span></li>"
             )
         parts.append("</ul>")
     else:
