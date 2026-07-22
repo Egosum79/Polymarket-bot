@@ -1,0 +1,506 @@
+#!/usr/bin/env python3
+"""
+=======================================================
+  POLYMARKET BTC DIRECTION BOT (1 HORA)
+  Predice si BTC sube o baja en la próxima vela de 1H
+=======================================================
+
+CÓMO FUNCIONA:
+  1. Descarga las últimas 50 velas 1H de BTC/USDT desde Binance
+  2. Calcula RSI(14), cruce EMA9/EMA21, MACD
+  3. Si 2 de 3 indicadores coinciden → señal fuerte UP o DOWN
+  4. Busca el mercado activo "BTC Up or Down" en Polymarket
+  5. Si hay ventaja ≥ 6% → registra apuesta simulada
+
+FUENTE DE DATOS:
+  Binance BTC/USDT (misma fuente que usa Polymarket para resolver)
+
+USO:
+  python btc_direction_bot.py              ← 1 ciclo
+  python btc_direction_bot.py --loop       ← corre cada hora indefinidamente
+
+MODO REAL (futuro):
+  Requiere py-clob-client + credenciales de Polymarket
+"""
+
+import json
+import math
+import time
+import argparse
+import urllib.request
+import urllib.error
+from datetime import datetime, timezone
+from pathlib import Path
+
+# ─────────────────────────────────────────────────────
+# CONFIGURACIÓN
+# ─────────────────────────────────────────────────────
+
+BINANCE_URL   = "https://api.binance.com"
+GAMMA_URL     = "https://gamma-api.polymarket.com"
+
+SYMBOL        = "BTCUSDT"
+INTERVAL      = "1h"
+CANDLES       = 50          # velas históricas para indicadores
+
+EDGE_MINIMO   = 0.06        # ventaja mínima para apostar (6%)
+APUESTA_USD   = 10.0        # tamaño fijo de apuesta en simulación
+LOG_FILE      = "btc_bot_log.jsonl"
+
+# ─────────────────────────────────────────────────────
+# DESCARGA DE DATOS
+# ─────────────────────────────────────────────────────
+
+def fetch(url: str) -> list | dict:
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+    with urllib.request.urlopen(req, timeout=15) as resp:
+        return json.loads(resp.read())
+
+
+def get_candles(symbol: str = SYMBOL, interval: str = INTERVAL, limit: int = CANDLES) -> list[dict]:
+    """Descarga velas OHLCV de Binance."""
+    url = f"{BINANCE_URL}/api/v3/klines?symbol={symbol}&interval={interval}&limit={limit}"
+    raw = fetch(url)
+    candles = []
+    for c in raw:
+        candles.append({
+            "open_time": c[0],
+            "open":      float(c[1]),
+            "high":      float(c[2]),
+            "low":       float(c[3]),
+            "close":     float(c[4]),
+            "volume":    float(c[5]),
+        })
+    return candles
+
+
+# ─────────────────────────────────────────────────────
+# INDICADORES TÉCNICOS (sin librerías externas)
+# ─────────────────────────────────────────────────────
+
+def ema(values: list[float], period: int) -> list[float]:
+    """Exponential Moving Average."""
+    k = 2 / (period + 1)
+    result = [values[0]]
+    for v in values[1:]:
+        result.append(v * k + result[-1] * (1 - k))
+    return result
+
+
+def rsi(closes: list[float], period: int = 14) -> float:
+    """RSI — Relative Strength Index."""
+    gains, losses = [], []
+    for i in range(1, len(closes)):
+        diff = closes[i] - closes[i - 1]
+        gains.append(max(diff, 0))
+        losses.append(max(-diff, 0))
+
+    if len(gains) < period:
+        return 50.0
+
+    avg_gain = sum(gains[-period:]) / period
+    avg_loss = sum(losses[-period:]) / period
+
+    if avg_loss == 0:
+        return 100.0
+    rs = avg_gain / avg_loss
+    return round(100 - (100 / (1 + rs)), 2)
+
+
+def macd(closes: list[float]) -> dict:
+    """MACD — línea MACD, señal y histograma."""
+    ema12  = ema(closes, 12)
+    ema26  = ema(closes, 26)
+    macd_line = [ema12[i] - ema26[i] for i in range(len(closes))]
+    signal    = ema(macd_line, 9)
+    histogram = [macd_line[i] - signal[i] for i in range(len(macd_line))]
+    return {
+        "macd":      macd_line[-1],
+        "signal":    signal[-1],
+        "histogram": histogram[-1],
+        "prev_hist": histogram[-2] if len(histogram) > 1 else 0,
+    }
+
+
+def analyze_candles(candles: list[dict]) -> dict:
+    """
+    Calcula todos los indicadores y genera señal compuesta.
+    Retorna señal: 'UP', 'DOWN' o 'NEUTRAL'
+    """
+    closes  = [c["close"] for c in candles]
+    volumes = [c["volume"] for c in candles]
+
+    # ── RSI ──────────────────────────────────────────
+    rsi_val    = rsi(closes)
+    rsi_signal = "UP" if rsi_val < 40 else "DOWN" if rsi_val > 60 else "NEUTRAL"
+
+    # ── EMA 9/21 cruce ───────────────────────────────
+    ema9       = ema(closes, 9)
+    ema21      = ema(closes, 21)
+    ema_diff   = ema9[-1] - ema21[-1]
+    ema_signal = "UP" if ema_diff > 0 else "DOWN"
+
+    # ── MACD ─────────────────────────────────────────
+    macd_data  = macd(closes)
+    # Señal: si el histograma cruzó de negativo a positivo (o viceversa)
+    if macd_data["histogram"] > 0 and macd_data["prev_hist"] <= 0:
+        macd_signal = "UP"
+    elif macd_data["histogram"] < 0 and macd_data["prev_hist"] >= 0:
+        macd_signal = "DOWN"
+    elif macd_data["histogram"] > 0:
+        macd_signal = "UP"
+    else:
+        macd_signal = "DOWN"
+
+    # ── Volumen (confirmación) ────────────────────────
+    vol_avg     = sum(volumes[-10:]) / 10
+    vol_current = volumes[-1]
+    vol_surge   = vol_current > vol_avg * 1.3   # volumen 30% sobre promedio
+
+    # ── Señal compuesta ──────────────────────────────
+    signals = [rsi_signal, ema_signal, macd_signal]
+    up_count   = signals.count("UP")
+    down_count = signals.count("DOWN")
+
+    if up_count >= 2:
+        direction = "UP"
+        strength  = up_count / 3
+    elif down_count >= 2:
+        direction = "DOWN"
+        strength  = down_count / 3
+    else:
+        direction = "NEUTRAL"
+        strength  = 0.0
+
+    # Fuerza extra si el volumen confirma
+    if vol_surge and direction != "NEUTRAL":
+        strength = min(strength + 0.1, 1.0)
+
+    # Precio actual
+    current_price = closes[-1]
+    prev_close    = closes[-2]
+    momentum_1h   = (current_price - prev_close) / prev_close * 100
+
+    return {
+        "direction":    direction,
+        "strength":     round(strength, 3),
+        "rsi":          rsi_val,
+        "rsi_signal":   rsi_signal,
+        "ema_diff":     round(ema_diff, 2),
+        "ema_signal":   ema_signal,
+        "macd_hist":    round(macd_data["histogram"], 2),
+        "macd_signal":  macd_signal,
+        "vol_surge":    vol_surge,
+        "btc_price":    current_price,
+        "momentum_1h":  round(momentum_1h, 3),
+    }
+
+
+# ─────────────────────────────────────────────────────
+# BUSCAR MERCADO ACTIVO EN POLYMARKET
+# ─────────────────────────────────────────────────────
+
+def find_btc_hourly_market() -> dict | None:
+    """
+    Busca el mercado activo 'BTC Up or Down' de 1 hora en Polymarket.
+    Filtra por: mercado activo, resolución dentro de ~1 hora, precio entre 30-70¢.
+    """
+    try:
+        url = (f"{GAMMA_URL}/markets?limit=100&active=true"
+               f"&order=endDate&ascending=true")
+        markets = fetch(url)
+    except Exception as e:
+        print(f"  ⚠️  Error buscando mercados: {e}")
+        return None
+
+    now = datetime.now(timezone.utc)
+    # Palabras clave para mercados horarios
+    hour_keywords = ["up or down", "arriba o abajo"]
+    btc_keywords  = ["bitcoin", "btc"]
+    # Excluir mercados de minutos (contienen "min" o "5m" o "15m")
+    exclude       = ["5 min", "15 min", "5min", "15min", " 5m", "11:3", "11:4",
+                     "11:5", "12:0", "pm et\n", ":05", ":10", ":15", ":20",
+                     ":25", ":30", ":35", ":40", ":45", ":50", ":55"]
+
+    best = None
+    best_minutes = 999
+
+    for m in markets:
+        q = m.get("question", "").lower()
+
+        # Debe ser mercado de BTC
+        if not any(kw in q for kw in btc_keywords):
+            continue
+        # Debe ser Up or Down
+        if not any(kw in q for kw in hour_keywords):
+            continue
+        # Excluir mercados de minutos
+        if any(ex in q for ex in exclude):
+            continue
+
+        # Verificar que resuelva en las próximas 2 horas
+        end_date = m.get("endDate", "")
+        try:
+            end = datetime.fromisoformat(end_date.replace("Z", "+00:00"))
+            minutes_left = (end - now).total_seconds() / 60
+            if minutes_left < 0 or minutes_left > 120:
+                continue
+        except Exception:
+            continue
+
+        # Precio entre 30-70¢ (mercado sin resolver aún)
+        try:
+            prices    = json.loads(m.get("outcomePrices", "[0.5,0.5]"))
+            yes_price = float(prices[0])
+            if not (0.30 < yes_price < 0.70):
+                continue
+        except Exception:
+            continue
+
+        # Tomar el que vence más pronto
+        if minutes_left < best_minutes:
+            best_minutes = minutes_left
+            best = m
+
+    if best:
+        print(f"     ⏱️  Vence en {best_minutes:.0f} minutos")
+    return best
+
+
+def get_market_probability(market: dict, direction: str) -> float:
+    """Retorna la probabilidad implícita del lado que queremos apostar."""
+    try:
+        prices    = json.loads(market.get("outcomePrices", "[0.5,0.5]"))
+        up_price  = float(prices[0])   # YES = UP en estos mercados
+        down_price = float(prices[1])  # NO  = DOWN
+        return up_price if direction == "UP" else down_price
+    except Exception:
+        return 0.5
+
+
+# ─────────────────────────────────────────────────────
+# ESTIMACIÓN DE PROBABILIDAD PROPIA
+# ─────────────────────────────────────────────────────
+
+def our_probability(analysis: dict) -> float:
+    """
+    Estima nuestra probabilidad de que BTC suba en la próxima hora.
+    Base: 50% (mercado eficiente) + ajustes por indicadores.
+    """
+    base = 0.50
+
+    # RSI: sobreventa → más probable subida
+    rsi_val = analysis["rsi"]
+    if rsi_val < 30:
+        base += 0.10
+    elif rsi_val < 40:
+        base += 0.05
+    elif rsi_val > 70:
+        base -= 0.10
+    elif rsi_val > 60:
+        base -= 0.05
+
+    # EMA: tendencia
+    if analysis["ema_signal"] == "UP":
+        base += 0.05
+    else:
+        base -= 0.05
+
+    # MACD: momento
+    if analysis["macd_signal"] == "UP":
+        base += 0.04
+    else:
+        base -= 0.04
+
+    # Volumen confirma movimiento
+    if analysis["vol_surge"]:
+        # El volumen amplifica la señal existente
+        direction_mult = 1 if base > 0.5 else -1
+        base += direction_mult * 0.03
+
+    # Momentum reciente de 1h
+    mom = analysis["momentum_1h"]
+    if mom > 0.5:    base += 0.03
+    elif mom < -0.5: base -= 0.03
+
+    return round(max(0.15, min(0.85, base)), 4)
+
+
+# ─────────────────────────────────────────────────────
+# LOGGING
+# ─────────────────────────────────────────────────────
+
+def log_entry(entry: dict):
+    with open(LOG_FILE, "a", encoding="utf-8") as f:
+        f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+
+
+def load_log() -> list[dict]:
+    p = Path(LOG_FILE)
+    if not p.exists():
+        return []
+    entries = []
+    with open(p, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line:
+                try:
+                    entries.append(json.loads(line))
+                except Exception:
+                    pass
+    return entries
+
+
+def print_stats():
+    """Muestra estadísticas acumuladas del log."""
+    entries = load_log()
+    if not entries:
+        return
+    bets = [e for e in entries if e.get("action") == "BET"]
+    if not bets:
+        print(f"\n  📋 {len(entries)} ciclos registrados, sin apuestas aún.")
+        return
+    print(f"\n  📋 ESTADÍSTICAS ACUMULADAS")
+    print(f"     Ciclos totales: {len(entries)}")
+    print(f"     Apuestas simuladas: {len(bets)}")
+    up_bets   = [b for b in bets if b.get("bet_side") == "UP"]
+    down_bets = [b for b in bets if b.get("bet_side") == "DOWN"]
+    print(f"     UP: {len(up_bets)}  |  DOWN: {len(down_bets)}")
+    total_sim = sum(b.get("bet_usd", 0) for b in bets)
+    print(f"     Capital simulado apostado: ${total_sim:.2f}")
+
+
+# ─────────────────────────────────────────────────────
+# CICLO PRINCIPAL
+# ─────────────────────────────────────────────────────
+
+def run_cycle() -> dict:
+    now = datetime.now(timezone.utc)
+    print(f"\n{'─'*60}")
+    print(f"  🕐 {now.strftime('%Y-%m-%d %H:%M UTC')}")
+    print(f"{'─'*60}")
+
+    # 1. Descargar velas de Binance
+    try:
+        candles = get_candles()
+        print(f"  📊 {len(candles)} velas 1H descargadas de Binance")
+    except Exception as e:
+        print(f"  ❌ Error descargando velas: {e}")
+        return {"action": "ERROR", "reason": str(e)}
+
+    # 2. Analizar indicadores
+    analysis = analyze_candles(candles)
+    btc = analysis["btc_price"]
+
+    print(f"\n  💰 BTC/USDT: ${btc:,.2f}  |  Momentum 1h: {analysis['momentum_1h']:+.3f}%")
+    print(f"\n  📈 INDICADORES:")
+    print(f"     RSI(14):     {analysis['rsi']:.1f}  → {analysis['rsi_signal']}")
+    print(f"     EMA 9/21:    diff={analysis['ema_diff']:+.2f}  → {analysis['ema_signal']}")
+    print(f"     MACD hist:   {analysis['macd_hist']:+.4f}  → {analysis['macd_signal']}")
+    print(f"     Vol surge:   {'✅ SÍ' if analysis['vol_surge'] else '❌ NO'}")
+    print(f"\n  🎯 SEÑAL COMPUESTA: {analysis['direction']}  (fuerza: {analysis['strength']*100:.0f}%)")
+
+    # 3. Si señal es NEUTRAL → no apostar
+    if analysis["direction"] == "NEUTRAL":
+        print(f"\n  ⚪ Sin señal clara — no se apuesta este ciclo")
+        entry = {
+            "timestamp": now.isoformat(),
+            "action":    "SKIP",
+            "reason":    "NEUTRAL",
+            "btc_price": btc,
+            **{k: analysis[k] for k in ["rsi","ema_signal","macd_signal","momentum_1h"]},
+        }
+        log_entry(entry)
+        return entry
+
+    # 4. Calcular probabilidades
+    our_prob = our_probability(analysis)
+    bet_side = analysis["direction"]
+    print(f"\n  🧮 Nuestra probabilidad de {bet_side}: {our_prob*100:.1f}%")
+
+    # 5. Buscar mercado activo en Polymarket
+    market = find_btc_hourly_market()
+    if market:
+        market_prob = get_market_probability(market, bet_side)
+        edge = our_prob - market_prob
+        print(f"  🏪 Mercado Polymarket encontrado:")
+        print(f"     {market.get('question','')[:70]}")
+        print(f"     Precio mercado ({bet_side}): {market_prob*100:.1f}¢")
+        print(f"     Edge: {edge*100:.1f}%")
+    else:
+        market_prob = 0.50
+        edge = our_prob - 0.50
+        print(f"  ⚠️  No se encontró mercado horario activo")
+        print(f"     Usando base 50/50 | Edge estimado: {edge*100:.1f}%")
+
+    # 6. Decisión de apuesta
+    if abs(edge) >= EDGE_MINIMO:
+        action = "BET"
+        print(f"\n  ✅ APUESTA SIMULADA: {bet_side} ${APUESTA_USD:.2f}  (edge={edge*100:.1f}%)")
+    else:
+        action = "PASS"
+        print(f"\n  ⚪ Edge insuficiente ({edge*100:.1f}% < {EDGE_MINIMO*100:.0f}%) — no se apuesta")
+
+    entry = {
+        "timestamp":    now.isoformat(),
+        "action":       action,
+        "bet_side":     bet_side if action == "BET" else None,
+        "bet_usd":      APUESTA_USD if action == "BET" else 0,
+        "our_prob":     our_prob,
+        "market_prob":  market_prob,
+        "edge":         round(edge, 4),
+        "btc_price":    btc,
+        "rsi":          analysis["rsi"],
+        "ema_signal":   analysis["ema_signal"],
+        "macd_signal":  analysis["macd_signal"],
+        "strength":     analysis["strength"],
+        "momentum_1h":  analysis["momentum_1h"],
+        "market_id":    market.get("id") if market else None,
+        "market_q":     market.get("question","")[:80] if market else None,
+    }
+    log_entry(entry)
+    return entry
+
+
+# ─────────────────────────────────────────────────────
+# MAIN
+# ─────────────────────────────────────────────────────
+
+def main():
+    parser = argparse.ArgumentParser(description="BTC Direction Bot — 1H")
+    parser.add_argument("--loop", action="store_true",
+                        help="Corre indefinidamente cada hora")
+    args = parser.parse_args()
+
+    print("=" * 60)
+    print("  🤖 BTC DIRECTION BOT — VELAS 1 HORA")
+    print("=" * 60)
+    print(f"  Fuente: Binance {SYMBOL} {INTERVAL}")
+    print(f"  Indicadores: RSI(14) + EMA(9/21) + MACD")
+    print(f"  Edge mínimo: {EDGE_MINIMO*100:.0f}%")
+    print(f"  Apuesta simulada: ${APUESTA_USD:.2f} por señal")
+    print(f"  Log: {LOG_FILE}")
+    print(f"  Modo: {'LOOP (cada hora)' if args.loop else '1 CICLO'}")
+
+    if args.loop:
+        print("\n  Presiona Ctrl+C para detener\n")
+        try:
+            while True:
+                run_cycle()
+                print_stats()
+                # Esperar hasta el inicio del próximo ciclo de hora
+                now     = datetime.now(timezone.utc)
+                mins_left = 60 - now.minute
+                print(f"\n  ⏰ Próximo ciclo en {mins_left} minutos...")
+                time.sleep(mins_left * 60)
+        except KeyboardInterrupt:
+            print("\n\n  🛑 Bot detenido.")
+    else:
+        run_cycle()
+        print_stats()
+        print(f"\n  💡 Para correr en loop: python btc_direction_bot.py --loop")
+        print(f"  💡 Para GitHub Actions: usa el workflow btc-direction.yml\n")
+
+
+if __name__ == "__main__":
+    main()
