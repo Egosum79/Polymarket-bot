@@ -43,7 +43,11 @@ if hasattr(sys.stdout, "reconfigure"):
 # CONFIGURACIÓN
 # ─────────────────────────────────────────────────────
 
-BINANCE_URL   = "https://api.binance.com"
+# data-api.binance.vision es el espejo público de solo-datos-de-mercado de Binance:
+# mismo formato que api.binance.com, pero sin el bloqueo geográfico (HTTP 451) que
+# afecta a api.binance.com desde IPs de datacenter en EE.UU. (incluyendo runners
+# de GitHub Actions).
+BINANCE_URL   = "https://data-api.binance.vision"
 GAMMA_URL     = "https://gamma-api.polymarket.com"
 
 SYMBOL        = "BTCUSDT"
