@@ -1,16 +1,31 @@
 #!/usr/bin/env python3
 """
 =======================================================
-  POLYMARKET BTC DIRECTION BOT (1 HORA)
-  Predice si BTC sube o baja en la próxima vela de 1H
+  POLYMARKET BTC DIRECTION BOT (VENTANA DE 15 MIN)
+  Predice si BTC sube o baja y apuesta en el mercado
+  "BTC Up or Down" de 15 minutos que esté abierto
 =======================================================
 
 CÓMO FUNCIONA:
   1. Descarga las últimas 50 velas 1H de BTC/USDT desde Binance
   2. Calcula RSI(14), cruce EMA9/EMA21, MACD
   3. Si 2 de 3 indicadores coinciden → señal fuerte UP o DOWN
-  4. Busca el mercado activo "BTC Up or Down" en Polymarket
+  4. Busca el mercado "BTC Up or Down" de 15 minutos actualmente
+     abierto en Polymarket (Polymarket ya no ofrece la variante de
+     1 hora — solo existen ventanas de 5 y 15 minutos, verificado
+     en vivo contra la API el 2026-07-22)
   5. Si hay ventaja ≥ 6% → registra apuesta simulada
+
+⚠️  DESAJUSTE DE HORIZONTE (limitación conocida):
+  Los indicadores (RSI/EMA/MACD) se calculan sobre velas de 1 HORA
+  y están pensados para predecir la tendencia de la próxima hora,
+  no de los próximos 15 minutos. En una ventana tan corta domina el
+  ruido de corto plazo, así que la señal probablemente tenga menos
+  poder predictivo real del que el modelo sugiere. Se mantiene así
+  porque es la única cadencia horaria de mercado que queda
+  disponible en Polymarket para BTC — pero conviene verificar la
+  rentabilidad real (ver settle_bets.py / sección P&L del reporte
+  diario) antes de considerar apostar dinero real con este bot.
 
 FUENTE DE DATOS:
   Binance BTC/USDT (misma fuente que usa Polymarket para resolver)
@@ -25,12 +40,13 @@ MODO REAL (futuro):
 
 import json
 import math
+import re
 import sys
 import time
 import argparse
 import urllib.request
 import urllib.error
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 # En consolas Windows con codepage legado (cp1252), imprimir emojis revienta
@@ -211,32 +227,76 @@ def analyze_candles(candles: list[dict]) -> dict:
 # BUSCAR MERCADO ACTIVO EN POLYMARKET
 # ─────────────────────────────────────────────────────
 
-def find_btc_hourly_market() -> dict | None:
+def parse_window_minutes(question: str) -> float | None:
     """
-    Busca el mercado activo 'BTC Up or Down' de 1 hora en Polymarket.
-    Filtra por: mercado activo, resolución dentro de ~1 hora, precio entre 30-70¢.
+    Extrae la duración real de la ventana desde el propio texto de la
+    pregunta (ej. "...2:45PM-3:00PM ET" → 15.0 minutos).
+
+    Nota: el campo 'startDate' de la API NO sirve para esto — se
+    verificó en vivo que para estos mercados 'startDate' refleja
+    cuándo Polymarket *creó/listó* el mercado (típicamente ~1 día
+    antes), no cuándo abre la ventana de apuesta. El rango horario
+    solo está confiablemente disponible en el texto de la pregunta.
     """
+    times = re.findall(r'(\d{1,2}:\d{2}\s*[AP]M)', question, re.IGNORECASE)
+    if len(times) < 2:
+        return None
     try:
-        url = (f"{GAMMA_URL}/markets?limit=100&active=true"
+        t0 = datetime.strptime(times[0].replace(" ", "").upper(), "%I:%M%p")
+        t1 = datetime.strptime(times[1].replace(" ", "").upper(), "%I:%M%p")
+        diff = (t1 - t0).total_seconds() / 60
+        if diff < 0:
+            diff += 24 * 60
+        return diff
+    except Exception:
+        return None
+
+
+def find_btc_window_market() -> dict | None:
+    """
+    Busca el mercado 'BTC Up or Down' de 15 minutos actualmente abierto en
+    Polymarket. (Se verificó en vivo el 2026-07-22 que Polymarket ya no
+    ofrece la variante de 1 hora para BTC — solo existen ventanas de 5 y
+    15 minutos; ver el aviso de desajuste de horizonte en el docstring del
+    módulo.)
+    Filtra por: mercado activo, resuelve pronto, ventana ≈15 min, precio
+    entre 30-70¢.
+    """
+    now = datetime.now(timezone.utc)
+    # Duración esperada de la ventana (tolerancia +-2 min sobre 15)
+    WINDOW_MIN_OK = 13
+    WINDOW_MAX_OK = 17
+    # No mirar más allá del propio largo de la ventana + margen: si buscáramos
+    # más lejos podríamos enganchar una ventana de 15 min que abre en 2 horas
+    # en vez de la que está abierta ahora mismo.
+    MAX_MINUTES_LEFT = 20
+    later = now + timedelta(minutes=MAX_MINUTES_LEFT)
+
+    try:
+        # Filtrar por end_date_min/max directamente en la API (en vez de pedir
+        # "las N más próximas a vencer" y filtrar en el cliente) evita por
+        # completo los mercados "zombis": entradas marcadas active=true &
+        # closed=false que en realidad vencieron hace meses y nunca se
+        # cerraron formalmente. Sin este filtro de rango, esos zombis dominan
+        # cualquier orden por endDate y tapan los mercados reales.
+        url = (f"{GAMMA_URL}/markets?limit=100&active=true&closed=false"
+               f"&end_date_min={now.strftime('%Y-%m-%dT%H:%M:%SZ')}"
+               f"&end_date_max={later.strftime('%Y-%m-%dT%H:%M:%SZ')}"
                f"&order=endDate&ascending=true")
         markets = fetch(url)
     except Exception as e:
         print(f"  ⚠️  Error buscando mercados: {e}")
         return None
 
-    now = datetime.now(timezone.utc)
-    # Palabras clave para mercados horarios
     hour_keywords = ["up or down", "arriba o abajo"]
     btc_keywords  = ["bitcoin", "btc"]
-    # Duración esperada de un mercado "horario" (tolerancia +-10 min sobre 60)
-    DURATION_MIN_OK = 50
-    DURATION_MAX_OK = 70
 
     best = None
     best_minutes = 999
 
     for m in markets:
-        q = m.get("question", "").lower()
+        question = m.get("question", "")
+        q = question.lower()
 
         # Debe ser mercado de BTC
         if not any(kw in q for kw in btc_keywords):
@@ -245,32 +305,32 @@ def find_btc_hourly_market() -> dict | None:
         if not any(kw in q for kw in hour_keywords):
             continue
 
-        # Verificar que resuelva en las próximas 2 horas
+        # Verificar que resuelva pronto (la ventana actualmente abierta)
         end_date = m.get("endDate", "")
         try:
             end = datetime.fromisoformat(end_date.replace("Z", "+00:00"))
             minutes_left = (end - now).total_seconds() / 60
-            if minutes_left < 0 or minutes_left > 120:
+            if minutes_left < 0 or minutes_left > MAX_MINUTES_LEFT:
                 continue
         except Exception:
             continue
 
-        # Excluir mercados de minutos (5m/15m) comparando la duración real
-        # de la ventana (endDate - startDate) en vez de adivinar por texto.
-        start_date = m.get("startDate", "")
-        try:
-            start = datetime.fromisoformat(start_date.replace("Z", "+00:00"))
-            duration_minutes = (end - start).total_seconds() / 60
-            if not (DURATION_MIN_OK <= duration_minutes <= DURATION_MAX_OK):
-                continue
-        except Exception:
-            continue   # sin startDate fiable, descartar por seguridad
+        # Quedarnos solo con la ventana de 15 min (no la de 5 min), leyendo
+        # el rango horario directamente del texto de la pregunta.
+        duration_minutes = parse_window_minutes(question)
+        if duration_minutes is None or not (WINDOW_MIN_OK <= duration_minutes <= WINDOW_MAX_OK):
+            continue
 
-        # Precio entre 30-70¢ (mercado sin resolver aún)
+        # Excluir solo mercados prácticamente ya resueltos. En una ventana de
+        # 15 min el precio se mueve rápido hacia el lado que va ganando
+        # apenas empieza — exigir 30-70¢ (como si acabara de abrir) descartaba
+        # casi todos los mercados reales que se alcanzan a atrapar con una
+        # revisión cada hora. 4-96¢ (mismo criterio que usa polymarket_bot.py)
+        # solo filtra los que ya están prácticamente decididos.
         try:
             prices    = json.loads(m.get("outcomePrices", "[0.5,0.5]"))
             yes_price = float(prices[0])
-            if not (0.30 < yes_price < 0.70):
+            if not (0.04 < yes_price < 0.96):
                 continue
         except Exception:
             continue
@@ -433,28 +493,37 @@ def run_cycle() -> dict:
         log_entry(entry)
         return entry
 
-    # 4. Calcular probabilidades
-    our_prob = our_probability(analysis)
-    bet_side = analysis["direction"]
-    print(f"\n  🧮 Nuestra probabilidad de {bet_side}: {our_prob*100:.1f}%")
+    # 4. Calcular probabilidad de UP (our_probability siempre devuelve P(sube),
+    #    nunca P(bet_side) — hay que compararla contra el precio de mercado
+    #    de UP y recién ahí decidir a qué lado le conviene apostar).
+    our_prob_up = our_probability(analysis)
+    print(f"\n  🧮 Nuestra probabilidad de UP: {our_prob_up*100:.1f}%  "
+          f"(señal técnica: {analysis['direction']})")
 
     # 5. Buscar mercado activo en Polymarket
-    market = find_btc_hourly_market()
+    market = find_btc_window_market()
     if market:
-        market_prob = get_market_probability(market, bet_side)
-        edge = our_prob - market_prob
+        market_prob_up = get_market_probability(market, "UP")
         print(f"  🏪 Mercado Polymarket encontrado:")
         print(f"     {market.get('question','')[:70]}")
-        print(f"     Precio mercado ({bet_side}): {market_prob*100:.1f}¢")
-        print(f"     Edge: {edge*100:.1f}%")
+        print(f"     Precio mercado (UP): {market_prob_up*100:.1f}¢")
     else:
-        market_prob = 0.50
-        edge = our_prob - 0.50
-        print(f"  ⚠️  No se encontró mercado horario activo")
-        print(f"     Usando base 50/50 | Edge estimado: {edge*100:.1f}%")
+        market_prob_up = 0.50
+        print(f"  ⚠️  No se encontró mercado horario activo — usando base 50/50")
 
-    # 6. Decisión de apuesta
-    if abs(edge) >= EDGE_MINIMO:
+    # 6. Elegir el lado con edge real, sin importar hacia dónde apuntaban los
+    #    indicadores: si el mercado ya descuenta con fuerza un lado y nuestro
+    #    modelo discrepa, el edge de verdad puede estar en el lado contrario.
+    edge_up = our_prob_up - market_prob_up
+    if edge_up >= 0:
+        bet_side, our_prob, market_prob, edge = "UP", our_prob_up, market_prob_up, edge_up
+    else:
+        bet_side, our_prob, market_prob, edge = "DOWN", 1 - our_prob_up, 1 - market_prob_up, -edge_up
+
+    print(f"     Edge ({bet_side}): {edge*100:.1f}%")
+
+    # 7. Decisión de apuesta
+    if edge >= EDGE_MINIMO:
         action = "BET"
         print(f"\n  ✅ APUESTA SIMULADA: {bet_side} ${APUESTA_USD:.2f}  (edge={edge*100:.1f}%)")
     else:

@@ -150,12 +150,65 @@ def analyze_btc(entries: list[dict]) -> dict:
     }
 
 
+def _summarize_settlements(rows: list[dict]) -> dict:
+    total    = len(rows)
+    wins     = sum(1 for r in rows if r.get("won"))
+    pnl      = sum(r.get("pnl", 0) for r in rows)
+    staked   = sum(r.get("bet_usd", 0) for r in rows)
+    win_rate = (wins / total * 100) if total else 0.0
+    roi      = (pnl / staked * 100) if staked else 0.0
+    return {
+        "total":    total,
+        "wins":     wins,
+        "losses":   total - wins,
+        "pnl":      round(pnl, 2),
+        "staked":   round(staked, 2),
+        "win_rate": round(win_rate, 1),
+        "roi":      round(roi, 1),
+    }
+
+
+def analyze_pnl(settlements: list[dict]) -> dict:
+    """
+    Rentabilidad real acumulada de las apuestas simuladas ya resueltas en
+    Polymarket (ver settle_bets.py / settlements.jsonl). A diferencia de
+    analyze()/analyze_btc(), esto no mide "qué tan buena parecía la señal"
+    sino "cuánto se habría ganado o perdido de verdad".
+    """
+    bot1 = [s for s in settlements if s.get("bot") == "bot1"]
+    bot2 = [s for s in settlements if s.get("bot") == "bot2"]
+    return {
+        "bot1":     _summarize_settlements(bot1),
+        "bot2":     _summarize_settlements(bot2),
+        "combined": _summarize_settlements(settlements),
+    }
+
+
 # ─────────────────────────────────────────────────────
 # GENERADOR DEL REPORTE
 # ─────────────────────────────────────────────────────
 
+def _pnl_table_md(label: str, s: dict) -> list[str]:
+    signo = "+" if s["pnl"] >= 0 else ""
+    return [
+        f"**{label}**",
+        "",
+        f"| Métrica | Valor |",
+        f"|---------|-------|",
+        f"| Apuestas liquidadas | {s['total']} |",
+        f"| ✅ Ganadas | {s['wins']} |",
+        f"| ❌ Perdidas | {s['losses']} |",
+        f"| Tasa de acierto | {s['win_rate']:.1f}% |",
+        f"| Capital apostado (liquidado) | ${s['staked']:.2f} |",
+        f"| **P&L** | **{signo}${s['pnl']:.2f}** |",
+        f"| **ROI** | **{signo}{s['roi']:.1f}%** |",
+        "",
+    ]
+
+
 def build_report(summary: dict, all_entries: list[dict],
-                 btc_summary: dict, all_btc_entries: list[dict]) -> tuple[str, str]:
+                 btc_summary: dict, all_btc_entries: list[dict],
+                 pnl: dict) -> tuple[str, str]:
     """Retorna (título, cuerpo) del issue de GitHub."""
     now    = datetime.now(timezone.utc)
     today  = now.strftime("%Y-%m-%d")
@@ -170,6 +223,30 @@ def build_report(summary: dict, all_entries: list[dict],
         f"## 🤖 Reporte Diario — {today}",
         f"*Generado automáticamente a las {hora}*",
         "",
+        "---",
+        "",
+        "## 💰 Rentabilidad acumulada (apuestas ya resueltas en Polymarket)",
+        "",
+    ]
+
+    if pnl["combined"]["total"] == 0:
+        lines += [
+            "Todavía no hay apuestas simuladas con mercado resuelto — los mercados "
+            "activos aún no han vencido. Esta sección se llena a medida que Polymarket "
+            "va resolviendo los mercados sobre los que se registraron señales.",
+            "",
+        ]
+    else:
+        lines += _pnl_table_md("Combinado (Bot 1 + Bot 2)", pnl["combined"])
+        lines += _pnl_table_md("Bot 1: Polymarket Señales", pnl["bot1"])
+        lines += _pnl_table_md("Bot 2: BTC Dirección 1H", pnl["bot2"])
+        lines += [
+            "*Nota: cada ciclo de señal se cuenta como una apuesta independiente, "
+            "sin descontar posiciones repetidas sobre el mismo mercado.*",
+            "",
+        ]
+
+    lines += [
         "---",
         "",
         "## 📈 Bot 1: Polymarket Señales (bot_log.jsonl)",
@@ -275,7 +352,8 @@ def _table_row(cells: list[str]) -> str:
 
 
 def build_email_html(summary: dict, all_entries: list[dict],
-                      btc_summary: dict, all_btc_entries: list[dict]) -> str:
+                      btc_summary: dict, all_btc_entries: list[dict],
+                      pnl: dict) -> str:
     now   = datetime.now(timezone.utc)
     today = now.strftime("%Y-%m-%d")
     hora  = now.strftime("%H:%M UTC")
@@ -285,10 +363,45 @@ def build_email_html(summary: dict, all_entries: list[dict],
         return (f"<table style='border-collapse:collapse;font-family:Arial,sans-serif;"
                 f"font-size:14px;width:100%;max-width:480px'>{body}</table>")
 
+    def pnl_block(label: str, s: dict) -> str:
+        color = "#1a7f37" if s["pnl"] >= 0 else "#c62828"
+        signo = "+" if s["pnl"] >= 0 else ""
+        return (
+            f"<p style='margin:14px 0 4px'><b>{label}</b></p>" +
+            metrics_table([
+                ("Apuestas liquidadas", str(s["total"])),
+                ("✅ Ganadas / ❌ Perdidas", f"{s['wins']} / {s['losses']}"),
+                ("Tasa de acierto", f"{s['win_rate']:.1f}%"),
+                ("Capital apostado (liquidado)", f"${s['staked']:.2f}"),
+                ("P&L", f"<b style='color:{color}'>{signo}${s['pnl']:.2f}</b>"),
+                ("ROI", f"<b style='color:{color}'>{signo}{s['roi']:.1f}%</b>"),
+            ])
+        )
+
     parts = [
         f"<div style='font-family:Arial,sans-serif;color:#222'>",
         f"<h2>🤖 Reporte Diario — {today}</h2>",
         f"<p style='color:#666'>Generado automáticamente a las {hora}</p>",
+        "<hr>",
+        "<h3>💰 Rentabilidad acumulada (apuestas ya resueltas en Polymarket)</h3>",
+    ]
+
+    if pnl["combined"]["total"] == 0:
+        parts.append(
+            "<p>Todavía no hay apuestas simuladas con mercado resuelto — los mercados "
+            "activos aún no han vencido.</p>"
+        )
+    else:
+        parts.append(pnl_block("Combinado (Bot 1 + Bot 2)", pnl["combined"]))
+        parts.append(pnl_block("Bot 1: Polymarket Señales", pnl["bot1"]))
+        parts.append(pnl_block("Bot 2: BTC Dirección 1H", pnl["bot2"]))
+        parts.append(
+            "<p style='color:#999;font-size:12px'>Nota: cada ciclo de señal se cuenta "
+            "como una apuesta independiente, sin descontar posiciones repetidas sobre "
+            "el mismo mercado.</p>"
+        )
+
+    parts += [
         "<hr>",
         "<h3>📈 Bot 1: Polymarket Señales</h3>",
         metrics_table([
@@ -458,8 +571,13 @@ def main():
 
     btc_summary = analyze_btc(recent_btc_entries)
 
-    title, body = build_report(summary, all_entries, btc_summary, all_btc_entries)
-    html_body   = build_email_html(summary, all_entries, btc_summary, all_btc_entries)
+    # Rentabilidad real de apuestas ya resueltas (ver settle_bets.py)
+    settlements = load_log("settlements.jsonl")
+    print(f"\n💰 Apuestas liquidadas (histórico): {len(settlements)}")
+    pnl = analyze_pnl(settlements)
+
+    title, body = build_report(summary, all_entries, btc_summary, all_btc_entries, pnl)
+    html_body   = build_email_html(summary, all_entries, btc_summary, all_btc_entries, pnl)
 
     print(f"\n📧 Enviando reporte por correo a {REPORT_TO}...")
     send_email_report(title, html_body)
