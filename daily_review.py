@@ -15,11 +15,35 @@ Variables de entorno requeridas (configuradas por GitHub):
 
 import json
 import os
+import smtplib
+import ssl
+import sys
 import urllib.request
 import urllib.error
 from datetime import datetime, timezone, timedelta
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 from pathlib import Path
 from collections import defaultdict
+
+# En consolas Windows con codepage legado (cp1252), imprimir emojis revienta
+# con UnicodeEncodeError. Forzamos stdout/stderr a UTF-8 si el terminal lo permite.
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
+# ── Email (modo REAL de entrega — SMTP con contraseña de aplicación) ──
+# Configurar como variables de entorno (o secretos de GitHub Actions):
+#   SMTP_HOST  (default: smtp.office365.com)
+#   SMTP_PORT  (default: 587)
+#   SMTP_USER  — cuenta remitente
+#   SMTP_PASS  — contraseña de aplicación (NUNCA la contraseña normal de la cuenta)
+#   REPORT_TO  — destinatario (default: hectorhugocortez@hotmail.com)
+SMTP_HOST = os.environ.get("SMTP_HOST", "smtp.office365.com")
+SMTP_PORT = int(os.environ.get("SMTP_PORT", "587"))
+SMTP_USER = os.environ.get("SMTP_USER", "")
+SMTP_PASS = os.environ.get("SMTP_PASS", "")
+REPORT_TO = os.environ.get("REPORT_TO", "hectorhugocortez@hotmail.com")
 
 
 # ─────────────────────────────────────────────────────
@@ -93,8 +117,8 @@ def analyze(entries: list[dict]) -> dict:
 def analyze_btc(entries: list[dict]) -> dict:
     """Analiza entradas del btc_direction_bot (btc_bot_log.jsonl)."""
     total     = len(entries)
-    bets_up   = [e for e in entries if e.get("action") == "BET" and e.get("direction") == "UP"]
-    bets_down = [e for e in entries if e.get("action") == "BET" and e.get("direction") == "DOWN"]
+    bets_up   = [e for e in entries if e.get("action") == "BET" and e.get("bet_side") == "UP"]
+    bets_down = [e for e in entries if e.get("action") == "BET" and e.get("bet_side") == "DOWN"]
     skipped   = [e for e in entries if e.get("action") == "SKIP"]
     no_market = [e for e in entries if e.get("action") in ("NO_MARKET", "PASS")]
 
@@ -211,12 +235,12 @@ def build_report(summary: dict, all_entries: list[dict],
             "",
         ]
         for i, s in enumerate(btc_summary["top"], 1):
-            direction = s.get("direction", "?")
+            direction = s.get("bet_side", "?")
             dir_emoji = "🟢" if direction == "UP" else "🔴"
             lines += [
                 f"**{i}. {dir_emoji} {direction}** — Edge: {s.get('edge',0)*100:.1f}% — "
-                f"Nuestra prob: {s.get('our_prob',0)*100:.0f}% | Mercado: {s.get('market_price',0)*100:.0f}¢",
-                f"> {s.get('market','')[:120]}",
+                f"Nuestra prob: {s.get('our_prob',0)*100:.0f}% | Mercado: {s.get('market_prob',0)*100:.0f}¢",
+                f"> {s.get('market_q','')[:120]}",
                 "",
             ]
     else:
@@ -235,6 +259,127 @@ def build_report(summary: dict, all_entries: list[dict],
     ]
 
     return title, "\n".join(lines)
+
+
+# ─────────────────────────────────────────────────────
+# GENERADOR DEL REPORTE (HTML PARA EMAIL)
+# ─────────────────────────────────────────────────────
+
+def _table_row(cells: list[str]) -> str:
+    tds = "".join(f"<td style='padding:4px 10px;border-bottom:1px solid #eee'>{c}</td>" for c in cells)
+    return f"<tr>{tds}</tr>"
+
+
+def build_email_html(summary: dict, all_entries: list[dict],
+                      btc_summary: dict, all_btc_entries: list[dict]) -> str:
+    now   = datetime.now(timezone.utc)
+    today = now.strftime("%Y-%m-%d")
+    hora  = now.strftime("%H:%M UTC")
+
+    def metrics_table(rows: list[tuple[str, str]]) -> str:
+        body = "".join(_table_row([k, v]) for k, v in rows)
+        return (f"<table style='border-collapse:collapse;font-family:Arial,sans-serif;"
+                f"font-size:14px;width:100%;max-width:480px'>{body}</table>")
+
+    parts = [
+        f"<div style='font-family:Arial,sans-serif;color:#222'>",
+        f"<h2>🤖 Reporte Diario — {today}</h2>",
+        f"<p style='color:#666'>Generado automáticamente a las {hora}</p>",
+        "<hr>",
+        "<h3>📈 Bot 1: Polymarket Señales</h3>",
+        metrics_table([
+            ("Total ciclos/señales", str(summary['total'])),
+            ("🟢 LONG YES", str(summary['long_yes'])),
+            ("🔴 LONG NO", str(summary['long_no'])),
+            ("Mercados únicos", str(summary['markets'])),
+            ("Edge promedio", f"{summary['avg_edge']*100:.1f}%"),
+            ("Apuesta simulada total", f"${summary['total_bet']:.2f}"),
+            ("Total histórico en log", str(len(all_entries))),
+        ]),
+    ]
+
+    if summary["top"]:
+        parts.append("<h4>🎯 Top señales del día</h4><ul>")
+        for s in summary["top"]:
+            side_emoji = "🟢" if s.get("bet_side") == "YES" else "🔴"
+            link = f"https://polymarket.com/event/{s.get('slug','')}"
+            parts.append(
+                f"<li>{side_emoji} <b>BET {s.get('bet_side')}</b> — Edge: {s.get('edge',0)*100:.1f}% "
+                f"— ${s.get('bet_usd',0):.2f}<br>"
+                f"<span style='color:#555'>{s.get('question','')[:100]}</span><br>"
+                f"BTC ${s.get('btc_price',0):,.0f} → Target ${s.get('target_price',0):,.0f} | "
+                f"Mercado {int(s.get('yes_price',0)*100)}¢ YES | Nuestra estima {int(s.get('our_prob',0)*100)}¢ "
+                f"— <a href='{link}'>Ver en Polymarket</a></li>"
+            )
+        parts.append("</ul>")
+    else:
+        parts.append("<p>⚪ Sin señales fuertes en las últimas 24h (edge insuficiente).</p>")
+
+    parts += [
+        "<hr>",
+        "<h3>₿ Bot 2: BTC Dirección 1H</h3>",
+        metrics_table([
+            ("Total ciclos", str(btc_summary['total'])),
+            ("🟢 Apuestas UP", str(btc_summary['bets_up'])),
+            ("🔴 Apuestas DOWN", str(btc_summary['bets_down'])),
+            ("⏭️ Sin edge suficiente (SKIP)", str(btc_summary['skipped'])),
+            ("🔍 Sin mercado disponible", str(btc_summary['no_market'])),
+            ("Edge promedio (apuestas)", f"{btc_summary['avg_edge']*100:.1f}%"),
+            ("Apuesta simulada total", f"${btc_summary['total_bet']:.2f}"),
+            ("Total histórico en log", str(len(all_btc_entries))),
+        ]),
+    ]
+
+    if btc_summary["top"]:
+        parts.append("<h4>🎯 Mejores apuestas del día</h4><ul>")
+        for s in btc_summary["top"]:
+            direction = s.get("bet_side", "?")
+            dir_emoji = "🟢" if direction == "UP" else "🔴"
+            parts.append(
+                f"<li>{dir_emoji} <b>{direction}</b> — Edge: {s.get('edge',0)*100:.1f}% — "
+                f"Nuestra prob: {s.get('our_prob',0)*100:.0f}% | Mercado: {s.get('market_prob',0)*100:.0f}¢<br>"
+                f"<span style='color:#555'>{s.get('market_q','')[:120]}</span></li>"
+            )
+        parts.append("</ul>")
+    else:
+        parts.append("<p>⚪ Sin apuestas en las últimas 24h.</p>")
+
+    parts += [
+        "<hr>",
+        "<p style='color:#999;font-size:12px'>⚠️ Este reporte es informativo. No constituye asesoría "
+        "financiera. Ambos bots operan en modo SIMULACIÓN — no se ejecutan apuestas reales.</p>",
+        "</div>",
+    ]
+    return "\n".join(parts)
+
+
+# ─────────────────────────────────────────────────────
+# ENVÍO POR CORREO (SMTP)
+# ─────────────────────────────────────────────────────
+
+def send_email_report(title: str, html_body: str) -> bool:
+    if not SMTP_USER or not SMTP_PASS:
+        print("⚠️  SMTP_USER / SMTP_PASS no configurados — no se puede enviar el correo")
+        print("   Configura estas variables de entorno (o secretos de GitHub Actions) para habilitar el envío.")
+        return False
+
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = title
+    msg["From"] = SMTP_USER
+    msg["To"] = REPORT_TO
+    msg.attach(MIMEText(html_body, "html", "utf-8"))
+
+    try:
+        context = ssl.create_default_context()
+        with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=20) as server:
+            server.starttls(context=context)
+            server.login(SMTP_USER, SMTP_PASS)
+            server.sendmail(SMTP_USER, [REPORT_TO], msg.as_string())
+        print(f"✅ Correo enviado a {REPORT_TO}")
+        return True
+    except Exception as e:
+        print(f"❌ Error enviando correo: {e}")
+        return False
 
 
 # ─────────────────────────────────────────────────────
@@ -310,8 +455,12 @@ def main():
     btc_summary = analyze_btc(recent_btc_entries)
 
     title, body = build_report(summary, all_entries, btc_summary, all_btc_entries)
+    html_body   = build_email_html(summary, all_entries, btc_summary, all_btc_entries)
 
-    print(f"\n📝 Publicando reporte: '{title}'")
+    print(f"\n📧 Enviando reporte por correo a {REPORT_TO}...")
+    send_email_report(title, html_body)
+
+    print(f"\n📝 Publicando reporte en GitHub Issues: '{title}'")
     create_github_issue(title, body)
 
     print("\n✅ Revisión diaria completada.")

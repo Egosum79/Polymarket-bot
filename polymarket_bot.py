@@ -34,6 +34,12 @@ import urllib.error
 from datetime import datetime, timezone
 from pathlib import Path
 
+# En consolas Windows con codepage legado (cp1252), imprimir emojis revienta
+# con UnicodeEncodeError. Forzamos stdout/stderr a UTF-8 si el terminal lo permite.
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 # ─────────────────────────────────────────────────────
 # CONFIGURACIÓN
 # ─────────────────────────────────────────────────────
@@ -103,6 +109,60 @@ def fetch(url: str) -> list | dict:
         return json.loads(resp.read())
 
 
+def get_btc_history(days: int = 30) -> list:
+    """Descarga histórico de precios BTC (CoinGecko market_chart). Retorna lista [timestamp_ms, price]."""
+    url = f"{'https://api.coingecko.com/api/v3'}/coins/bitcoin/market_chart?vs_currency=usd&days={days}"
+    try:
+        data = fetch(url)
+        return data.get("prices", [])
+    except Exception as e:
+        print(f"  ⚠️  Error obteniendo histórico BTC: {e}")
+        return []
+
+
+def estimate_btc_drift_vol(prices: list) -> tuple[float, float]:
+    """
+    Estima drift (mu) y volatilidad (sigma) DIARIOS de BTC a partir de precios
+    históricos, usando retornos logarítmicos entre puntos consecutivos (la
+    frecuencia real se mide desde los timestamps, sea horaria o diaria).
+
+    El drift se encoge (shrinkage) hacia 0: el retorno medio de una muestra
+    corta es un estimador muy ruidoso de la tendencia real (su error estándar
+    es del mismo orden que la señal misma). La volatilidad es un estimador
+    mucho más estable y es la que hace el trabajo pesado del modelo.
+    """
+    if len(prices) < 10:
+        return 0.0, 0.02   # fallback conservador (~2% diario, típico de BTC)
+
+    closes = [p[1] for p in prices]
+    times  = [p[0] / 86_400_000 for p in prices]   # ms → días
+
+    log_returns, dts = [], []
+    for i in range(1, len(closes)):
+        dt = times[i] - times[i - 1]
+        if dt <= 0 or closes[i - 1] <= 0:
+            continue
+        log_returns.append(math.log(closes[i] / closes[i - 1]))
+        dts.append(dt)
+
+    if not log_returns:
+        return 0.0, 0.02
+
+    avg_dt = sum(dts) / len(dts)
+    mean_r = sum(log_returns) / len(log_returns)
+    var_r  = sum((r - mean_r) ** 2 for r in log_returns) / max(1, len(log_returns) - 1)
+
+    mu_daily    = (mean_r / avg_dt) * 0.25   # shrinkage — ver docstring
+    sigma_daily = math.sqrt(var_r / avg_dt)
+
+    return mu_daily, max(sigma_daily, 0.005)
+
+
+def norm_cdf(x: float) -> float:
+    """CDF de la normal estándar, vía la función error (sin dependencias externas)."""
+    return 0.5 * (1 + math.erf(x / math.sqrt(2)))
+
+
 def get_btc_markets() -> list[dict]:
     """Descarga mercados activos de Bitcoin en Polymarket."""
     url = f"{GAMMA_URL}/markets?limit=100&active=true&order=volume24hr&ascending=false"
@@ -163,18 +223,18 @@ def detect_direction(question: str) -> str:
     return "UNKNOWN"
 
 
-def analyze_btc_market(market: dict, btc: dict) -> dict | None:
+def analyze_btc_market(market: dict, btc: dict, mu: float, sigma: float) -> dict | None:
     """
     Analiza si hay una oportunidad en un mercado de BTC.
 
-    Lógica:
-    - Mercado UP (ej: BTC llega a $150k): si BTC está lejos de ese target
-      y la probabilidad del mercado es mayor a lo que debería ser → BET NO
-    - Mercado DOWN (ej: BTC cae a $50k): si BTC está lejos de ese nivel
-      y la probabilidad del mercado es mayor a lo que debería ser → BET NO
+    Modelo: BTC sigue un movimiento geométrico browniano (GBM) con drift `mu`
+    y volatilidad `sigma` diarios, estimados de precios históricos reales
+    (ver estimate_btc_drift_vol). Bajo GBM, ln(S_T) ~ Normal(ln(S0) + mu*T,
+    sigma²*T), lo que da una probabilidad de llegar al precio objetivo mucho
+    mejor fundamentada que una heurística de "tendencia reciente" arbitraria.
 
-    El "edge" es la diferencia entre la probabilidad del mercado
-    y nuestra estimación de la probabilidad real.
+    El "edge" es la diferencia entre la probabilidad implícita del mercado
+    y nuestra estimación de la probabilidad real (nuestra_prob).
     """
     if btc["price"] is None:
         return None
@@ -214,56 +274,35 @@ def analyze_btc_market(market: dict, btc: dict) -> dict | None:
         return None
 
     btc_price    = btc["price"]
-    change_24h   = btc["change_24h"] / 100   # como decimal
+    change_24h   = btc["change_24h"] / 100   # como decimal, solo informativo
     change_7d    = btc["change_7d"] / 100
 
-    # ── Estimación de probabilidad real ───────────────
-    # Distancia porcentual entre precio actual y target
-    distance_pct = (target_price - btc_price) / btc_price
+    # ── Estimación de probabilidad real (GBM log-normal) ──────────────
+    T = max(days_left, 0.25)   # evita división por T≈0 en mercados que vencen ya
+    d = (math.log(btc_price / target_price) + mu * T) / (sigma * math.sqrt(T))
+    prob_above_target = norm_cdf(d)   # P(BTC_T >= target)
 
     if direction == "UP":
-        # ¿Qué tan probable es que BTC suba distance_pct% en days_left días?
-        # Usamos una heurística: BTC sube en promedio ~0.3% diario en bull market
-        # Ajustamos por tendencia reciente
-        daily_drift = 0.003 + change_7d / 30   # tendencia ajustada
-        expected_move = daily_drift * days_left
-        # Probabilidad estimada (sigmoid simplificada)
-        edge_raw = expected_move - distance_pct
-        our_prob = max(0.02, min(0.98, 0.5 + edge_raw * 2))
-
-        if our_prob < yes_price - EDGE_MINIMO:
-            # El mercado sobrevalora la probabilidad → BET NO
-            edge = yes_price - our_prob
-            bet_side = "NO"
-            bet_price = no_price
-        elif our_prob > yes_price + EDGE_MINIMO:
-            # El mercado subvalora → BET YES
-            edge = our_prob - yes_price
-            bet_side = "YES"
-            bet_price = yes_price
-        else:
-            return None   # sin ventaja suficiente
-
+        our_prob = prob_above_target
     elif direction == "DOWN":
-        # ¿Qué tan probable es que BTC baje distance_pct% en days_left días?
-        distance_down = (btc_price - target_price) / btc_price
-        daily_drop = -0.002 + change_7d / 30
-        expected_drop = -daily_drop * days_left
-        our_prob = max(0.02, min(0.98, 0.5 - (distance_down - expected_drop) * 2))
-
-        if our_prob < yes_price - EDGE_MINIMO:
-            edge = yes_price - our_prob
-            bet_side = "NO"
-            bet_price = no_price
-        elif our_prob > yes_price + EDGE_MINIMO:
-            edge = our_prob - yes_price
-            bet_side = "YES"
-            bet_price = yes_price
-        else:
-            return None
-
+        our_prob = 1 - prob_above_target
     else:
         return None
+
+    our_prob = max(0.02, min(0.98, our_prob))
+
+    if our_prob < yes_price - EDGE_MINIMO:
+        # El mercado sobrevalora la probabilidad → BET NO
+        edge = yes_price - our_prob
+        bet_side = "NO"
+        bet_price = no_price
+    elif our_prob > yes_price + EDGE_MINIMO:
+        # El mercado subvalora → BET YES
+        edge = our_prob - yes_price
+        bet_side = "YES"
+        bet_price = yes_price
+    else:
+        return None   # sin ventaja suficiente
 
     # ── Tamaño de apuesta (Kelly simplificado) ────────
     # f = (edge * (1/bet_price - 1) - (1-edge)) / (1/bet_price - 1)
@@ -375,14 +414,19 @@ def run_cycle(mode: str = "simulation") -> list[dict]:
         print("  ❌ No se pudo obtener precio de BTC")
         return []
 
-    # 2. Mercados de BTC en Polymarket
+    # 2. Volatilidad y drift reales (histórico 30 días, una sola vez por ciclo)
+    history     = get_btc_history(30)
+    mu, sigma   = estimate_btc_drift_vol(history)
+    print(f"  📐 Modelo GBM: drift diario {mu*100:+.3f}%  |  volatilidad diaria {sigma*100:.2f}%")
+
+    # 3. Mercados de BTC en Polymarket
     markets = get_btc_markets()
     print(f"  📊 Mercados BTC encontrados: {len(markets)}")
 
-    # 3. Analizar cada mercado
+    # 4. Analizar cada mercado
     signals = []
     for m in markets:
-        result = analyze_btc_market(m, btc)
+        result = analyze_btc_market(m, btc, mu, sigma)
         if result:
             signals.append(result)
 

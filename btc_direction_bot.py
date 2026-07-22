@@ -25,12 +25,19 @@ MODO REAL (futuro):
 
 import json
 import math
+import sys
 import time
 import argparse
 import urllib.request
 import urllib.error
 from datetime import datetime, timezone
 from pathlib import Path
+
+# En consolas Windows con codepage legado (cp1252), imprimir emojis revienta
+# con UnicodeEncodeError. Forzamos stdout/stderr a UTF-8 si el terminal lo permite.
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 # ─────────────────────────────────────────────────────
 # CONFIGURACIÓN
@@ -217,10 +224,9 @@ def find_btc_hourly_market() -> dict | None:
     # Palabras clave para mercados horarios
     hour_keywords = ["up or down", "arriba o abajo"]
     btc_keywords  = ["bitcoin", "btc"]
-    # Excluir mercados de minutos (contienen "min" o "5m" o "15m")
-    exclude       = ["5 min", "15 min", "5min", "15min", " 5m", "11:3", "11:4",
-                     "11:5", "12:0", "pm et\n", ":05", ":10", ":15", ":20",
-                     ":25", ":30", ":35", ":40", ":45", ":50", ":55"]
+    # Duración esperada de un mercado "horario" (tolerancia +-10 min sobre 60)
+    DURATION_MIN_OK = 50
+    DURATION_MAX_OK = 70
 
     best = None
     best_minutes = 999
@@ -234,9 +240,6 @@ def find_btc_hourly_market() -> dict | None:
         # Debe ser Up or Down
         if not any(kw in q for kw in hour_keywords):
             continue
-        # Excluir mercados de minutos
-        if any(ex in q for ex in exclude):
-            continue
 
         # Verificar que resuelva en las próximas 2 horas
         end_date = m.get("endDate", "")
@@ -247,6 +250,17 @@ def find_btc_hourly_market() -> dict | None:
                 continue
         except Exception:
             continue
+
+        # Excluir mercados de minutos (5m/15m) comparando la duración real
+        # de la ventana (endDate - startDate) en vez de adivinar por texto.
+        start_date = m.get("startDate", "")
+        try:
+            start = datetime.fromisoformat(start_date.replace("Z", "+00:00"))
+            duration_minutes = (end - start).total_seconds() / 60
+            if not (DURATION_MIN_OK <= duration_minutes <= DURATION_MAX_OK):
+                continue
+        except Exception:
+            continue   # sin startDate fiable, descartar por seguridad
 
         # Precio entre 30-70¢ (mercado sin resolver aún)
         try:
