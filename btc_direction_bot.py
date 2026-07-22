@@ -400,7 +400,9 @@ def run_cycle() -> dict:
         print(f"  📊 {len(candles)} velas 1H descargadas de Binance")
     except Exception as e:
         print(f"  ❌ Error descargando velas: {e}")
-        return {"action": "ERROR", "reason": str(e)}
+        entry = {"timestamp": now.isoformat(), "action": "ERROR", "reason": str(e)}
+        log_entry(entry)   # registrar el fallo para que el reporte y el historial lo reflejen
+        return entry
 
     # 2. Analizar indicadores
     analysis = analyze_candles(candles)
@@ -510,10 +512,15 @@ def main():
         except KeyboardInterrupt:
             print("\n\n  🛑 Bot detenido.")
     else:
-        run_cycle()
+        result = run_cycle()
         print_stats()
         print(f"\n  💡 Para correr en loop: python btc_direction_bot.py --loop")
         print(f"  💡 Para GitHub Actions: usa el workflow btc-direction.yml\n")
+        if result.get("action") == "ERROR":
+            # Sin esto, un fallo al descargar datos (ej. Binance bloqueando la IP
+            # del runner de GitHub Actions) quedaba en silencio: el workflow
+            # marcaba "success" aunque el ciclo no hiciera nada.
+            sys.exit(1)
 
 
 if __name__ == "__main__":
