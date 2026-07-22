@@ -6,7 +6,7 @@ on:
   workflow_dispatch:        # permite correrlo manualmente para probar
 
 permissions:
-  contents: read
+  contents: write            # necesario para commitear settlements.jsonl
   issues: write             # necesario para crear issues
 
 jobs:
@@ -24,6 +24,35 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+
+      - name: Liquidar apuestas resueltas en Polymarket
+        run: python settle_bets.py
+
+      - name: Guardar settlements.jsonl en el repositorio
+        run: |
+          git config --global user.email "settle-bets@github"
+          git config --global user.name "Settle Bets"
+          git add settlements.jsonl || true
+          if git diff --cached --quiet; then
+            echo "Sin cambios en settlements.jsonl, nada que commitear."
+          else
+            git commit -m "Settle bets $(date '+%Y-%m-%d %H:%M UTC')"
+            pushed=0
+            for i in 1 2 3 4 5; do
+              git fetch origin main
+              if git rebase origin/main && git push origin HEAD:main; then
+                pushed=1
+                break
+              fi
+              echo "Push rechazado (intento $i), reintentando..."
+              git rebase --abort || true
+              sleep $((RANDOM % 5 + 1))
+            done
+            if [ "$pushed" -ne 1 ]; then
+              echo "::error::No se pudo pushear settlements.jsonl tras 5 intentos"
+              exit 1
+            fi
+          fi
 
       - name: Generar y publicar reporte diario
         env:
