@@ -39,11 +39,11 @@ if hasattr(sys.stdout, "reconfigure"):
 #   SMTP_USER  — cuenta remitente
 #   SMTP_PASS  — contraseña de aplicación (NUNCA la contraseña normal de la cuenta)
 #   REPORT_TO  — destinatario (default: hectorhugocortez@hotmail.com)
-SMTP_HOST = os.environ.get("SMTP_HOST", "smtp.office365.com")
-SMTP_PORT = int(os.environ.get("SMTP_PORT", "587"))
-SMTP_USER = os.environ.get("SMTP_USER", "")
-SMTP_PASS = os.environ.get("SMTP_PASS", "")
-REPORT_TO = os.environ.get("REPORT_TO", "hectorhugocortez@hotmail.com")
+SMTP_HOST = os.environ.get("SMTP_HOST") or "smtp.office365.com"
+SMTP_PORT = int(os.environ.get("SMTP_PORT") or "587")
+SMTP_USER = os.environ.get("SMTP_USER") or ""
+SMTP_PASS = os.environ.get("SMTP_PASS") or ""
+REPORT_TO = os.environ.get("REPORT_TO") or "hectorhugocortez@hotmail.com"
 
 
 # ─────────────────────────────────────────────────────
