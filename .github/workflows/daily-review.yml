@@ -28,7 +28,8 @@ jobs:
       - name: Generar y publicar reporte diario
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}   # automático, sin configurar nada
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}         # ej: smtp-relay.brevo.com (vacío = usa Office365 por defecto)
           SMTP_USER: ${{ secrets.SMTP_USER }}         # configurar en Settings > Secrets and variables > Actions
-          SMTP_PASS: ${{ secrets.SMTP_PASS }}         # contraseña de aplicación, NO la contraseña normal
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}         # API key / SMTP key del proveedor, nunca tu contraseña real
           REPORT_TO: hectorhugocortez@hotmail.com
         run: python daily_review.py
