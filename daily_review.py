@@ -90,11 +90,44 @@ def analyze(entries: list[dict]) -> dict:
     }
 
 
+def analyze_btc(entries: list[dict]) -> dict:
+    """Analiza entradas del btc_direction_bot (btc_bot_log.jsonl)."""
+    total     = len(entries)
+    bets_up   = [e for e in entries if e.get("action") == "BET" and e.get("direction") == "UP"]
+    bets_down = [e for e in entries if e.get("action") == "BET" and e.get("direction") == "DOWN"]
+    skipped   = [e for e in entries if e.get("action") == "SKIP"]
+    no_market = [e for e in entries if e.get("action") in ("NO_MARKET", "PASS")]
+
+    edges = [abs(e.get("edge", 0)) for e in entries if e.get("action") == "BET" and e.get("edge")]
+    avg_edge = sum(edges) / len(edges) if edges else 0
+
+    total_bet = sum(e.get("bet_usd", 0) for e in entries if e.get("action") == "BET")
+
+    # Top señales por edge
+    top = sorted(
+        [e for e in entries if e.get("action") == "BET"],
+        key=lambda x: abs(x.get("edge", 0)),
+        reverse=True
+    )[:3]
+
+    return {
+        "total":      total,
+        "bets_up":    len(bets_up),
+        "bets_down":  len(bets_down),
+        "skipped":    len(skipped),
+        "no_market":  len(no_market),
+        "avg_edge":   avg_edge,
+        "total_bet":  total_bet,
+        "top":        top,
+    }
+
+
 # ─────────────────────────────────────────────────────
 # GENERADOR DEL REPORTE
 # ─────────────────────────────────────────────────────
 
-def build_report(summary: dict, all_entries: list[dict]) -> tuple[str, str]:
+def build_report(summary: dict, all_entries: list[dict],
+                 btc_summary: dict, all_btc_entries: list[dict]) -> tuple[str, str]:
     """Retorna (título, cuerpo) del issue de GitHub."""
     now    = datetime.now(timezone.utc)
     today  = now.strftime("%Y-%m-%d")
@@ -102,16 +135,18 @@ def build_report(summary: dict, all_entries: list[dict]) -> tuple[str, str]:
 
     title = f"📊 Reporte Diario Bot — {today}"
 
-    # Estadísticas totales del log completo
-    total_all = len(all_entries)
+    total_all     = len(all_entries)
+    total_all_btc = len(all_btc_entries)
 
     lines = [
-        f"## 🤖 Polymarket Bot — Reporte del {today}",
+        f"## 🤖 Reporte Diario — {today}",
         f"*Generado automáticamente a las {hora}*",
         "",
         "---",
         "",
-        "### 📈 Señales detectadas (últimas 24h)",
+        "## 📈 Bot 1: Polymarket Señales (bot_log.jsonl)",
+        "",
+        "### Señales detectadas (últimas 24h)",
         "",
         f"| Métrica | Valor |",
         f"|---------|-------|",
@@ -121,14 +156,13 @@ def build_report(summary: dict, all_entries: list[dict]) -> tuple[str, str]:
         f"| Mercados únicos | {summary['markets']} |",
         f"| Edge promedio | {summary['avg_edge']*100:.1f}% |",
         f"| Apuesta simulada total | ${summary['total_bet']:.2f} |",
+        f"| Total histórico en log | {total_all} |",
         "",
     ]
 
     if summary["top"]:
         lines += [
-            "---",
-            "",
-            "### 🎯 Top señales del día",
+            "#### 🎯 Top señales del día",
             "",
         ]
         for i, s in enumerate(summary["top"], 1):
@@ -144,24 +178,60 @@ def build_report(summary: dict, all_entries: list[dict]) -> tuple[str, str]:
             ]
     else:
         lines += [
-            "---",
-            "",
-            "### ⚪ Sin señales fuertes en las últimas 24h",
+            "#### ⚪ Sin señales fuertes en las últimas 24h",
             "",
             "El modelo no encontró oportunidades con edge ≥ 8% en este período.",
+            "",
+        ]
+
+    # ── Sección BTC Direction Bot ──────────────────────────────────────────
+    lines += [
+        "---",
+        "",
+        "## ₿ Bot 2: BTC Dirección 1H (btc_bot_log.jsonl)",
+        "",
+        "### Ciclos (últimas 24h)",
+        "",
+        f"| Métrica | Valor |",
+        f"|---------|-------|",
+        f"| Total ciclos | {btc_summary['total']} |",
+        f"| 🟢 Apuestas UP | {btc_summary['bets_up']} |",
+        f"| 🔴 Apuestas DOWN | {btc_summary['bets_down']} |",
+        f"| ⏭️ Sin edge suficiente (SKIP) | {btc_summary['skipped']} |",
+        f"| 🔍 Sin mercado disponible | {btc_summary['no_market']} |",
+        f"| Edge promedio (apuestas) | {btc_summary['avg_edge']*100:.1f}% |",
+        f"| Apuesta simulada total | ${btc_summary['total_bet']:.2f} |",
+        f"| Total histórico en log | {total_all_btc} |",
+        "",
+    ]
+
+    if btc_summary["top"]:
+        lines += [
+            "#### 🎯 Mejores apuestas del día",
+            "",
+        ]
+        for i, s in enumerate(btc_summary["top"], 1):
+            direction = s.get("direction", "?")
+            dir_emoji = "🟢" if direction == "UP" else "🔴"
+            lines += [
+                f"**{i}. {dir_emoji} {direction}** — Edge: {s.get('edge',0)*100:.1f}% — "
+                f"Nuestra prob: {s.get('our_prob',0)*100:.0f}% | Mercado: {s.get('market_price',0)*100:.0f}¢",
+                f"> {s.get('market','')[:120]}",
+                "",
+            ]
+    else:
+        lines += [
+            "#### ⚪ Sin apuestas en las últimas 24h",
+            "",
+            "El bot no encontró oportunidades con edge ≥ 6% en este período.",
             "",
         ]
 
     lines += [
         "---",
         "",
-        f"### 📋 Estadísticas históricas",
-        f"Total de señales registradas desde el inicio: **{total_all}**",
-        "",
-        "---",
-        "",
         "*⚠️ Este reporte es informativo. No constituye asesoría financiera.*",
-        "*El bot opera en modo SIMULACIÓN — no se ejecutan apuestas reales.*",
+        "*Ambos bots operan en modo SIMULACIÓN — no se ejecutan apuestas reales.*",
     ]
 
     return title, "\n".join(lines)
@@ -221,14 +291,25 @@ def main():
     print("  POLYMARKET BOT — REVISIÓN DIARIA")
     print("=" * 60)
 
+    # Bot 1: Polymarket señales
     all_entries    = load_log("bot_log.jsonl")
     recent_entries = entries_last_24h(all_entries)
 
-    print(f"\n📋 Entradas totales en log: {len(all_entries)}")
-    print(f"📋 Entradas últimas 24h:    {len(recent_entries)}")
+    print(f"\n📋 [Bot 1] Entradas totales: {len(all_entries)}")
+    print(f"📋 [Bot 1] Últimas 24h:      {len(recent_entries)}")
 
     summary = analyze(recent_entries)
-    title, body = build_report(summary, all_entries)
+
+    # Bot 2: BTC dirección 1H
+    all_btc_entries    = load_log("btc_bot_log.jsonl")
+    recent_btc_entries = entries_last_24h(all_btc_entries)
+
+    print(f"\n₿  [Bot 2] Entradas totales: {len(all_btc_entries)}")
+    print(f"₿  [Bot 2] Últimas 24h:      {len(recent_btc_entries)}")
+
+    btc_summary = analyze_btc(recent_btc_entries)
+
+    title, body = build_report(summary, all_entries, btc_summary, all_btc_entries)
 
     print(f"\n📝 Publicando reporte: '{title}'")
     create_github_issue(title, body)
