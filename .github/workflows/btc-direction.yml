@@ -1,0 +1,33 @@
+name: BTC Direction Bot (1H)
+
+on:
+  schedule:
+    - cron: '2 * * * *'   # 2 minutos después de cada hora (cuando la vela ya cerró)
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  run-btc-bot:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Descargar repositorio
+        uses: actions/checkout@v4
+
+      - name: Configurar Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Correr bot dirección BTC
+        run: python btc_direction_bot.py
+
+      - name: Guardar log en repositorio
+        run: |
+          git config --global user.email "btc-bot@github"
+          git config --global user.name "BTC Direction Bot"
+          git add btc_bot_log.jsonl || true
+          git diff --cached --quiet || git commit -m "BTC cycle $(date '+%Y-%m-%d %H:%M UTC')"
+          git push || true
