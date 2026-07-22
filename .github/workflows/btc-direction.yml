@@ -34,10 +34,18 @@ jobs:
             exit 0
           fi
           git commit -m "BTC cycle $(date '+%Y-%m-%d %H:%M UTC')"
+          pushed=0
           for i in 1 2 3 4 5; do
             git fetch origin main
-            git rebase origin/main && git push origin HEAD:main && break
+            if git rebase origin/main && git push origin HEAD:main; then
+              pushed=1
+              break
+            fi
             echo "Push rechazado (intento $i), reintentando..."
             git rebase --abort || true
             sleep $((RANDOM % 5 + 1))
           done
+          if [ "$pushed" -ne 1 ]; then
+            echo "::error::No se pudo pushear btc_bot_log.jsonl tras 5 intentos"
+            exit 1
+          fi
