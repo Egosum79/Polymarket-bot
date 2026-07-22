@@ -17,7 +17,10 @@ Por qué existe:
   para no volver a consultar mercados ya liquidados).
 
   daily_review.py lee settlements.jsonl para mostrar P&L
-  acumulado, ROI% y tasa de acierto en el reporte diario.
+  acumulado, ROI% y tasa de acierto en el reporte diario, además
+  de una curva de capital simulado (arranca en $100 por bot y va
+  sumando/restando el pnl de cada apuesta liquidada, en el orden
+  en que se resolvió — campo 'settled_at').
 
 LIMITACIÓN CONOCIDA:
   Cada ciclo del bot registra su señal como una apuesta
@@ -25,7 +28,10 @@ LIMITACIÓN CONOCIDA:
   mismo mercado (no hay gestión de posiciones abiertas). El P&L
   aquí calculado asume que CADA señal se habría apostado por
   separado — sobreestima el capital desplegado si en la práctica
-  uno solo tomaría la posición una vez por mercado.
+  uno solo tomaría la posición una vez por mercado. La curva de
+  capital hereda la misma limitación: no reserva capital para
+  apuestas todavía abiertas, así que puede mostrar más exposición
+  simultánea de la que $100 reales permitirían.
 
 USO:
   python settle_bets.py
@@ -35,6 +41,7 @@ import json
 import sys
 import urllib.request
 import urllib.error
+from datetime import datetime, timezone
 from pathlib import Path
 
 # En consolas Windows con codepage legado (cp1252), imprimir emojis revienta
@@ -136,6 +143,7 @@ def settle_bot1(entries: list[dict], already_settled: set) -> list[dict]:
             "won":        won,
             "pnl":        round(pnl, 4),
             "timestamp":  e.get("timestamp"),
+            "settled_at": datetime.now(timezone.utc).isoformat(),
         })
     return results
 
@@ -172,6 +180,7 @@ def settle_bot2(entries: list[dict], already_settled: set) -> list[dict]:
             "won":        won,
             "pnl":        round(pnl, 4),
             "timestamp":  e.get("timestamp"),
+            "settled_at": datetime.now(timezone.utc).isoformat(),
         })
     return results
 

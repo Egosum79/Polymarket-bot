@@ -184,12 +184,53 @@ def analyze_pnl(settlements: list[dict]) -> dict:
     }
 
 
+CAPITAL_INICIAL = 100.0   # banco simulado de arranque, por bot
+
+
+def compute_capital(settlements: list[dict], initial: float = CAPITAL_INICIAL) -> dict:
+    """
+    Curva de capital simulado: arranca en `initial` por bot y va sumando el
+    pnl de cada apuesta liquidada, en el orden real en que se resolvió
+    (campo 'settled_at' de settle_bets.py; si falta, se usa 'timestamp' de
+    cuando se registró la señal como respaldo).
+
+    Limitación: no reserva capital para apuestas todavía abiertas (ver
+    docstring de settle_bets.py) — puede reflejar más exposición simultánea
+    de la que el capital inicial permitiría en la práctica.
+    """
+    def sort_key(s):
+        return s.get("settled_at") or s.get("timestamp") or ""
+
+    def curve(rows: list[dict]) -> dict:
+        capital = initial
+        peak    = initial
+        max_drawdown = 0.0
+        for s in sorted(rows, key=sort_key):
+            capital += s.get("pnl", 0)
+            peak = max(peak, capital)
+            max_drawdown = max(max_drawdown, peak - capital)
+        return {
+            "initial":      round(initial, 2),
+            "current":      round(capital, 2),
+            "return_pct":   round((capital - initial) / initial * 100, 1),
+            "max_drawdown": round(max_drawdown, 2),
+        }
+
+    bot1 = [s for s in settlements if s.get("bot") == "bot1"]
+    bot2 = [s for s in settlements if s.get("bot") == "bot2"]
+    return {
+        "bot1": curve(bot1),
+        "bot2": curve(bot2),
+    }
+
+
 # ─────────────────────────────────────────────────────
 # GENERADOR DEL REPORTE
 # ─────────────────────────────────────────────────────
 
 def _pnl_table_md(label: str, s: dict) -> list[str]:
-    signo = "+" if s["pnl"] >= 0 else ""
+    pnl_signo = "-" if s["pnl"] < 0 else "+"
+    roi_signo = "+" if s["roi"] >= 0 else ""
     return [
         f"**{label}**",
         "",
@@ -200,15 +241,31 @@ def _pnl_table_md(label: str, s: dict) -> list[str]:
         f"| ❌ Perdidas | {s['losses']} |",
         f"| Tasa de acierto | {s['win_rate']:.1f}% |",
         f"| Capital apostado (liquidado) | ${s['staked']:.2f} |",
-        f"| **P&L** | **{signo}${s['pnl']:.2f}** |",
-        f"| **ROI** | **{signo}{s['roi']:.1f}%** |",
+        f"| **P&L** | **{pnl_signo}${abs(s['pnl']):.2f}** |",
+        f"| **ROI** | **{roi_signo}{s['roi']:.1f}%** |",
+        "",
+    ]
+
+
+def _capital_table_md(label: str, c: dict) -> list[str]:
+    signo = "+" if c["return_pct"] >= 0 else ""
+    cap_signo = "-" if c["current"] < 0 else ""
+    return [
+        f"**{label}**",
+        "",
+        f"| Métrica | Valor |",
+        f"|---------|-------|",
+        f"| Capital inicial | ${c['initial']:.2f} |",
+        f"| Capital actual | {cap_signo}${abs(c['current']):.2f} |",
+        f"| Retorno | {signo}{c['return_pct']:.1f}% |",
+        f"| Máxima caída (drawdown) | ${c['max_drawdown']:.2f} |",
         "",
     ]
 
 
 def build_report(summary: dict, all_entries: list[dict],
                  btc_summary: dict, all_btc_entries: list[dict],
-                 pnl: dict) -> tuple[str, str]:
+                 pnl: dict, capital: dict) -> tuple[str, str]:
     """Retorna (título, cuerpo) del issue de GitHub."""
     now    = datetime.now(timezone.utc)
     today  = now.strftime("%Y-%m-%d")
@@ -243,6 +300,15 @@ def build_report(summary: dict, all_entries: list[dict],
         lines += [
             "*Nota: cada ciclo de señal se cuenta como una apuesta independiente, "
             "sin descontar posiciones repetidas sobre el mismo mercado.*",
+            "",
+            "#### 🏦 Curva de capital simulado (banco inicial $100 por bot)",
+            "",
+        ]
+        lines += _capital_table_md("Bot 1: Polymarket Señales", capital["bot1"])
+        lines += _capital_table_md("Bot 2: BTC Dirección 1H", capital["bot2"])
+        lines += [
+            "*Nota: no reserva capital para apuestas todavía abiertas — puede mostrar "
+            "más exposición simultánea de la que $100 reales permitirían.*",
             "",
         ]
 
@@ -353,7 +419,7 @@ def _table_row(cells: list[str]) -> str:
 
 def build_email_html(summary: dict, all_entries: list[dict],
                       btc_summary: dict, all_btc_entries: list[dict],
-                      pnl: dict) -> str:
+                      pnl: dict, capital: dict) -> str:
     now   = datetime.now(timezone.utc)
     today = now.strftime("%Y-%m-%d")
     hora  = now.strftime("%H:%M UTC")
@@ -365,7 +431,8 @@ def build_email_html(summary: dict, all_entries: list[dict],
 
     def pnl_block(label: str, s: dict) -> str:
         color = "#1a7f37" if s["pnl"] >= 0 else "#c62828"
-        signo = "+" if s["pnl"] >= 0 else ""
+        pnl_signo = "-" if s["pnl"] < 0 else "+"
+        roi_signo = "+" if s["roi"] >= 0 else ""
         return (
             f"<p style='margin:14px 0 4px'><b>{label}</b></p>" +
             metrics_table([
@@ -373,8 +440,22 @@ def build_email_html(summary: dict, all_entries: list[dict],
                 ("✅ Ganadas / ❌ Perdidas", f"{s['wins']} / {s['losses']}"),
                 ("Tasa de acierto", f"{s['win_rate']:.1f}%"),
                 ("Capital apostado (liquidado)", f"${s['staked']:.2f}"),
-                ("P&L", f"<b style='color:{color}'>{signo}${s['pnl']:.2f}</b>"),
-                ("ROI", f"<b style='color:{color}'>{signo}{s['roi']:.1f}%</b>"),
+                ("P&L", f"<b style='color:{color}'>{pnl_signo}${abs(s['pnl']):.2f}</b>"),
+                ("ROI", f"<b style='color:{color}'>{roi_signo}{s['roi']:.1f}%</b>"),
+            ])
+        )
+
+    def capital_block(label: str, c: dict) -> str:
+        color = "#1a7f37" if c["return_pct"] >= 0 else "#c62828"
+        signo = "+" if c["return_pct"] >= 0 else ""
+        return (
+            f"<p style='margin:14px 0 4px'><b>{label}</b></p>" +
+            metrics_table([
+                ("Capital inicial", f"${c['initial']:.2f}"),
+                ("Capital actual", f"<b style='color:{color}'>"
+                                    f"{'-' if c['current'] < 0 else ''}${abs(c['current']):.2f}</b>"),
+                ("Retorno", f"<b style='color:{color}'>{signo}{c['return_pct']:.1f}%</b>"),
+                ("Máxima caída (drawdown)", f"${c['max_drawdown']:.2f}"),
             ])
         )
 
@@ -399,6 +480,14 @@ def build_email_html(summary: dict, all_entries: list[dict],
             "<p style='color:#999;font-size:12px'>Nota: cada ciclo de señal se cuenta "
             "como una apuesta independiente, sin descontar posiciones repetidas sobre "
             "el mismo mercado.</p>"
+        )
+        parts.append("<p style='margin:16px 0 4px'><b>🏦 Curva de capital simulado (banco inicial $100 por bot)</b></p>")
+        parts.append(capital_block("Bot 1: Polymarket Señales", capital["bot1"]))
+        parts.append(capital_block("Bot 2: BTC Dirección 1H", capital["bot2"]))
+        parts.append(
+            "<p style='color:#999;font-size:12px'>Nota: no reserva capital para apuestas "
+            "todavía abiertas — puede mostrar más exposición simultánea de la que $100 "
+            "reales permitirían.</p>"
         )
 
     parts += [
@@ -574,10 +663,11 @@ def main():
     # Rentabilidad real de apuestas ya resueltas (ver settle_bets.py)
     settlements = load_log("settlements.jsonl")
     print(f"\n💰 Apuestas liquidadas (histórico): {len(settlements)}")
-    pnl = analyze_pnl(settlements)
+    pnl     = analyze_pnl(settlements)
+    capital = compute_capital(settlements)
 
-    title, body = build_report(summary, all_entries, btc_summary, all_btc_entries, pnl)
-    html_body   = build_email_html(summary, all_entries, btc_summary, all_btc_entries, pnl)
+    title, body = build_report(summary, all_entries, btc_summary, all_btc_entries, pnl, capital)
+    html_body   = build_email_html(summary, all_entries, btc_summary, all_btc_entries, pnl, capital)
 
     print(f"\n📧 Enviando reporte por correo a {REPORT_TO}...")
     send_email_report(title, html_body)
