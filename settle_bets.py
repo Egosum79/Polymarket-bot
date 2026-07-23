@@ -4,7 +4,8 @@
   LIQUIDADOR DE APUESTAS SIMULADAS
   Revisa mercados de Polymarket ya resueltos y calcula el
   P&L real (ganancia/pérdida en USD) de las apuestas que
-  polymarket_bot.py y btc_direction_bot.py registraron.
+  polymarket_bot.py, btc_direction_bot.py y btc_scalp_bot.py
+  registraron.
 =======================================================
 
 Por qué existe:
@@ -54,6 +55,7 @@ GAMMA_URL         = "https://gamma-api.polymarket.com"
 SETTLEMENTS_FILE  = "settlements.jsonl"
 BOT1_LOG          = "bot_log.jsonl"
 BOT2_LOG          = "btc_bot_log.jsonl"
+BOT3_LOG          = "btc_scalp_log.jsonl"
 
 
 def fetch(url: str):
@@ -148,8 +150,12 @@ def settle_bot1(entries: list[dict], already_settled: set) -> list[dict]:
     return results
 
 
-def settle_bot2(entries: list[dict], already_settled: set) -> list[dict]:
-    """btc_bot_log.jsonl: bet_side es UP/DOWN (UP↔YES, DOWN↔NO en el mercado 'Up or Down')."""
+def settle_updown_bot(entries: list[dict], bot_name: str, already_settled: set) -> list[dict]:
+    """
+    Liquida logs con bet_side UP/DOWN (UP↔YES, DOWN↔NO en el mercado 'Up or
+    Down'). Usado tanto por btc_direction_bot.py (bot2) como por
+    btc_scalp_bot.py (bot3) — comparten el mismo formato de log.
+    """
     results = []
     for e in entries:
         if e.get("action") != "BET":
@@ -157,7 +163,7 @@ def settle_bot2(entries: list[dict], already_settled: set) -> list[dict]:
         market_id = e.get("market_id")
         if not market_id:
             continue   # sin mercado real emparejado, no se puede liquidar contra Polymarket
-        key = bet_key("bot2", e)
+        key = bet_key(bot_name, e)
         if key in already_settled:
             continue
         market = get_market(market_id)
@@ -171,7 +177,7 @@ def settle_bot2(entries: list[dict], already_settled: set) -> list[dict]:
         pnl = pnl_for_bet(won, e.get("market_prob", 0), e.get("bet_usd", 0))
         results.append({
             "key":        key,
-            "bot":        "bot2",
+            "bot":        bot_name,
             "market_id":  market_id,
             "question":   e.get("market_q", ""),
             "bet_side":   e.get("bet_side"),
@@ -195,8 +201,11 @@ def main():
 
     bot1_entries = load_jsonl(BOT1_LOG)
     bot2_entries = load_jsonl(BOT2_LOG)
+    bot3_entries = load_jsonl(BOT3_LOG)
 
-    new_results = settle_bot1(bot1_entries, already_settled) + settle_bot2(bot2_entries, already_settled)
+    new_results = (settle_bot1(bot1_entries, already_settled)
+                   + settle_updown_bot(bot2_entries, "bot2", already_settled)
+                   + settle_updown_bot(bot3_entries, "bot3", already_settled))
 
     print(f"  Apuestas liquidadas previamente: {len(settled_so_far)}")
     print(f"  Mercados aún pendientes de resolver o recién liquidados: revisando...")

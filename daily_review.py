@@ -177,9 +177,11 @@ def analyze_pnl(settlements: list[dict]) -> dict:
     """
     bot1 = [s for s in settlements if s.get("bot") == "bot1"]
     bot2 = [s for s in settlements if s.get("bot") == "bot2"]
+    bot3 = [s for s in settlements if s.get("bot") == "bot3"]
     return {
         "bot1":     _summarize_settlements(bot1),
         "bot2":     _summarize_settlements(bot2),
+        "bot3":     _summarize_settlements(bot3),
         "combined": _summarize_settlements(settlements),
     }
 
@@ -218,9 +220,11 @@ def compute_capital(settlements: list[dict], initial: float = CAPITAL_INICIAL) -
 
     bot1 = [s for s in settlements if s.get("bot") == "bot1"]
     bot2 = [s for s in settlements if s.get("bot") == "bot2"]
+    bot3 = [s for s in settlements if s.get("bot") == "bot3"]
     return {
         "bot1": curve(bot1),
         "bot2": curve(bot2),
+        "bot3": curve(bot3),
     }
 
 
@@ -265,6 +269,7 @@ def _capital_table_md(label: str, c: dict) -> list[str]:
 
 def build_report(summary: dict, all_entries: list[dict],
                  btc_summary: dict, all_btc_entries: list[dict],
+                 scalp_summary: dict, all_scalp_entries: list[dict],
                  pnl: dict, capital: dict) -> tuple[str, str]:
     """Retorna (título, cuerpo) del issue de GitHub."""
     now    = datetime.now(timezone.utc)
@@ -294,18 +299,21 @@ def build_report(summary: dict, all_entries: list[dict],
             "",
         ]
     else:
-        lines += _pnl_table_md("Combinado (Bot 1 + Bot 2)", pnl["combined"])
+        lines += _pnl_table_md("Combinado (Bot 1 + Bot 2 + Bot 3)", pnl["combined"])
         lines += _pnl_table_md("Bot 1: Polymarket Señales", pnl["bot1"])
         lines += _pnl_table_md("Bot 2: BTC Dirección 1H", pnl["bot2"])
+        lines += _pnl_table_md("Bot 3: BTC Scalp 15min", pnl["bot3"])
         lines += [
             "*Nota: cada ciclo de señal se cuenta como una apuesta independiente, "
-            "sin descontar posiciones repetidas sobre el mismo mercado.*",
+            "sin descontar posiciones repetidas sobre el mismo mercado (Bot 3 sí evita "
+            "apostar más de una vez por ventana, ver su docstring).*",
             "",
             "#### 🏦 Curva de capital simulado (banco inicial $100 por bot)",
             "",
         ]
         lines += _capital_table_md("Bot 1: Polymarket Señales", capital["bot1"])
         lines += _capital_table_md("Bot 2: BTC Dirección 1H", capital["bot2"])
+        lines += _capital_table_md("Bot 3: BTC Scalp 15min", capital["bot3"])
         lines += [
             "*Nota: no reserva capital para apuestas todavía abiertas — puede mostrar "
             "más exposición simultánea de la que $100 reales permitirían.*",
@@ -398,11 +406,55 @@ def build_report(summary: dict, all_entries: list[dict],
             "",
         ]
 
+    # ── Sección BTC Scalp Bot (señal nativa de 15 min) ────────────────────
+    total_all_scalp = len(all_scalp_entries)
+    lines += [
+        "---",
+        "",
+        "## 🩳 Bot 3: BTC Scalp 15min (btc_scalp_log.jsonl)",
+        "",
+        "### Ciclos (últimas 24h)",
+        "",
+        f"| Métrica | Valor |",
+        f"|---------|-------|",
+        f"| Total ciclos | {scalp_summary['total']} |",
+        f"| 🟢 Apuestas UP | {scalp_summary['bets_up']} |",
+        f"| 🔴 Apuestas DOWN | {scalp_summary['bets_down']} |",
+        f"| ⏭️ Sin edge suficiente / ya apostado (SKIP) | {scalp_summary['skipped']} |",
+        f"| 🔍 Sin mercado disponible | {scalp_summary['no_market']} |",
+        f"| Edge promedio (apuestas) | {scalp_summary['avg_edge']*100:.1f}% |",
+        f"| Apuesta simulada total | ${scalp_summary['total_bet']:.2f} |",
+        f"| Total histórico en log | {total_all_scalp} |",
+        "",
+    ]
+
+    if scalp_summary["top"]:
+        lines += [
+            "#### 🎯 Mejores apuestas del día",
+            "",
+        ]
+        for i, s in enumerate(scalp_summary["top"], 1):
+            direction = s.get("bet_side", "?")
+            dir_emoji = "🟢" if direction == "UP" else "🔴"
+            lines += [
+                f"**{i}. {dir_emoji} {direction}** — Edge: {s.get('edge',0)*100:.1f}% — "
+                f"Nuestra prob: {s.get('our_prob',0)*100:.0f}% | Mercado: {s.get('market_prob',0)*100:.0f}¢",
+                f"> {(s.get('market_q') or '')[:120]}",
+                "",
+            ]
+    else:
+        lines += [
+            "#### ⚪ Sin apuestas en las últimas 24h",
+            "",
+            "El bot no encontró oportunidades con edge ≥ 10% en este período.",
+            "",
+        ]
+
     lines += [
         "---",
         "",
         "*⚠️ Este reporte es informativo. No constituye asesoría financiera.*",
-        "*Ambos bots operan en modo SIMULACIÓN — no se ejecutan apuestas reales.*",
+        "*Los tres bots operan en modo SIMULACIÓN — no se ejecutan apuestas reales.*",
     ]
 
     return title, "\n".join(lines)
@@ -419,6 +471,7 @@ def _table_row(cells: list[str]) -> str:
 
 def build_email_html(summary: dict, all_entries: list[dict],
                       btc_summary: dict, all_btc_entries: list[dict],
+                      scalp_summary: dict, all_scalp_entries: list[dict],
                       pnl: dict, capital: dict) -> str:
     now   = datetime.now(timezone.utc)
     today = now.strftime("%Y-%m-%d")
@@ -473,17 +526,19 @@ def build_email_html(summary: dict, all_entries: list[dict],
             "activos aún no han vencido.</p>"
         )
     else:
-        parts.append(pnl_block("Combinado (Bot 1 + Bot 2)", pnl["combined"]))
+        parts.append(pnl_block("Combinado (Bot 1 + Bot 2 + Bot 3)", pnl["combined"]))
         parts.append(pnl_block("Bot 1: Polymarket Señales", pnl["bot1"]))
         parts.append(pnl_block("Bot 2: BTC Dirección 1H", pnl["bot2"]))
+        parts.append(pnl_block("Bot 3: BTC Scalp 15min", pnl["bot3"]))
         parts.append(
             "<p style='color:#999;font-size:12px'>Nota: cada ciclo de señal se cuenta "
             "como una apuesta independiente, sin descontar posiciones repetidas sobre "
-            "el mismo mercado.</p>"
+            "el mismo mercado (Bot 3 sí evita apostar más de una vez por ventana).</p>"
         )
         parts.append("<p style='margin:16px 0 4px'><b>🏦 Curva de capital simulado (banco inicial $100 por bot)</b></p>")
         parts.append(capital_block("Bot 1: Polymarket Señales", capital["bot1"]))
         parts.append(capital_block("Bot 2: BTC Dirección 1H", capital["bot2"]))
+        parts.append(capital_block("Bot 3: BTC Scalp 15min", capital["bot3"]))
         parts.append(
             "<p style='color:#999;font-size:12px'>Nota: no reserva capital para apuestas "
             "todavía abiertas — puede mostrar más exposición simultánea de la que $100 "
@@ -552,8 +607,37 @@ def build_email_html(summary: dict, all_entries: list[dict],
 
     parts += [
         "<hr>",
+        "<h3>🩳 Bot 3: BTC Scalp 15min</h3>",
+        metrics_table([
+            ("Total ciclos", str(scalp_summary['total'])),
+            ("🟢 Apuestas UP", str(scalp_summary['bets_up'])),
+            ("🔴 Apuestas DOWN", str(scalp_summary['bets_down'])),
+            ("⏭️ Sin edge suficiente / ya apostado (SKIP)", str(scalp_summary['skipped'])),
+            ("🔍 Sin mercado disponible", str(scalp_summary['no_market'])),
+            ("Edge promedio (apuestas)", f"{scalp_summary['avg_edge']*100:.1f}%"),
+            ("Apuesta simulada total", f"${scalp_summary['total_bet']:.2f}"),
+            ("Total histórico en log", str(len(all_scalp_entries))),
+        ]),
+    ]
+
+    if scalp_summary["top"]:
+        parts.append("<h4>🎯 Mejores apuestas del día</h4><ul>")
+        for s in scalp_summary["top"]:
+            direction = s.get("bet_side", "?")
+            dir_emoji = "🟢" if direction == "UP" else "🔴"
+            parts.append(
+                f"<li>{dir_emoji} <b>{direction}</b> — Edge: {s.get('edge',0)*100:.1f}% — "
+                f"Nuestra prob: {s.get('our_prob',0)*100:.0f}% | Mercado: {s.get('market_prob',0)*100:.0f}¢<br>"
+                f"<span style='color:#555'>{(s.get('market_q') or '')[:120]}</span></li>"
+            )
+        parts.append("</ul>")
+    else:
+        parts.append("<p>⚪ Sin apuestas en las últimas 24h.</p>")
+
+    parts += [
+        "<hr>",
         "<p style='color:#999;font-size:12px'>⚠️ Este reporte es informativo. No constituye asesoría "
-        "financiera. Ambos bots operan en modo SIMULACIÓN — no se ejecutan apuestas reales.</p>",
+        "financiera. Los tres bots operan en modo SIMULACIÓN — no se ejecutan apuestas reales.</p>",
         "</div>",
     ]
     return "\n".join(parts)
@@ -660,14 +744,25 @@ def main():
 
     btc_summary = analyze_btc(recent_btc_entries)
 
+    # Bot 3: BTC scalp 15min (mismo formato de log que Bot 2, se reutiliza analyze_btc)
+    all_scalp_entries    = load_log("btc_scalp_log.jsonl")
+    recent_scalp_entries = entries_last_24h(all_scalp_entries)
+
+    print(f"\n🩳 [Bot 3] Entradas totales: {len(all_scalp_entries)}")
+    print(f"🩳 [Bot 3] Últimas 24h:      {len(recent_scalp_entries)}")
+
+    scalp_summary = analyze_btc(recent_scalp_entries)
+
     # Rentabilidad real de apuestas ya resueltas (ver settle_bets.py)
     settlements = load_log("settlements.jsonl")
     print(f"\n💰 Apuestas liquidadas (histórico): {len(settlements)}")
     pnl     = analyze_pnl(settlements)
     capital = compute_capital(settlements)
 
-    title, body = build_report(summary, all_entries, btc_summary, all_btc_entries, pnl, capital)
-    html_body   = build_email_html(summary, all_entries, btc_summary, all_btc_entries, pnl, capital)
+    title, body = build_report(summary, all_entries, btc_summary, all_btc_entries,
+                                scalp_summary, all_scalp_entries, pnl, capital)
+    html_body   = build_email_html(summary, all_entries, btc_summary, all_btc_entries,
+                                    scalp_summary, all_scalp_entries, pnl, capital)
 
     print(f"\n📧 Enviando reporte por correo a {REPORT_TO}...")
     send_email_report(title, html_body)
