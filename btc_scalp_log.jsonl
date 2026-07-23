@@ -1,1 +1,2 @@
 {"timestamp": "2026-07-23T17:37:47.999710+00:00", "action": "BET", "bet_side": "UP", "bet_usd": 10.0, "our_prob": 0.4155, "market_prob": 0.295, "edge": 0.1205, "btc_price": 64804.0, "rsi": 39.87, "ema_diff": -3.66, "window_momentum": -0.109, "market_id": "3032884", "market_q": "Bitcoin Up or Down - July 23, 1:30PM-1:45PM ET"}
+{"timestamp": "2026-07-23T17:45:44.661407+00:00", "action": "NO_MARKET"}
