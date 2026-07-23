@@ -1,0 +1,51 @@
+name: BTC Scalp Bot (15min)
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'   # cada 5 minutos (respaldo — poco confiable en GitHub, ver cron-job.org)
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  run-scalp-bot:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Descargar repositorio
+        uses: actions/checkout@v4
+
+      - name: Configurar Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Correr bot scalp BTC (15 min)
+        run: python btc_scalp_bot.py
+
+      - name: Guardar log en repositorio
+        run: |
+          git config --global user.email "btc-scalp-bot@github"
+          git config --global user.name "BTC Scalp Bot"
+          git add btc_scalp_log.jsonl || true
+          if git diff --cached --quiet; then
+            echo "Sin cambios en el log, nada que commitear."
+          else
+            git commit -m "Scalp cycle $(date '+%Y-%m-%d %H:%M UTC')"
+            pushed=0
+            for i in 1 2 3 4 5; do
+              git fetch origin main
+              if git rebase origin/main && git push origin HEAD:main; then
+                pushed=1
+                break
+              fi
+              echo "Push rechazado (intento $i), reintentando..."
+              git rebase --abort || true
+              sleep $((RANDOM % 5 + 1))
+            done
+            if [ "$pushed" -ne 1 ]; then
+              echo "::error::No se pudo pushear btc_scalp_log.jsonl tras 5 intentos"
+              exit 1
+            fi
+          fi
