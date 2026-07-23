@@ -50,6 +50,7 @@ USO:
 """
 
 import json
+import math
 import sys
 import time
 import argparse
@@ -135,13 +136,45 @@ def analyze_scalp(candles_1m: list[dict], window_open_price: float | None,
     }
 
 
+WEIGHTS_FILE = "bot3_weights.json"
+
+
+def _predict_learned(analysis: dict, weights_path: str = WEIGHTS_FILE) -> float | None:
+    """
+    Si retrain_model.py ya ajustó un modelo con suficientes apuestas reales
+    liquidadas, usa esos pesos en vez de la heurística fija de abajo.
+    Retorna None si el archivo no existe todavía, o si falta algún dato
+    (ej. window_momentum) para poder aplicar el modelo.
+    """
+    p = Path(weights_path)
+    if not p.exists() or analysis.get("window_momentum") is None:
+        return None
+    try:
+        with open(p, encoding="utf-8") as f:
+            model = json.load(f)
+        means, stds, weights = model["means"], model["stds"], model["weights"]
+        raw = [analysis["rsi"], analysis["ema_diff"], analysis["window_momentum"]]
+        std = [(x - m) / s for x, m, s in zip(raw, means, stds)]
+        z = weights[0] + sum(w * x for w, x in zip(weights[1:], std))
+        prob = 1 / (1 + math.exp(-max(-30.0, min(30.0, z))))
+        return round(max(0.02, min(0.98, prob)), 4)
+    except Exception:
+        return None
+
+
 def our_probability_scalp(analysis: dict) -> float:
     """
     Estima la probabilidad de que BTC termine arriba al cierre de la ventana.
-    Base 50% + RSI de corto plazo (contrarian) + cruce EMA rápido (tendencia)
+    Usa el modelo reajustado con datos reales si ya existe (ver
+    retrain_model.py); si no, cae en la heurística fija de siempre: base
+    50% + RSI de corto plazo (contrarian) + cruce EMA rápido (tendencia)
     + momentum ya recorrido dentro de la ventana (continuación — ver aviso
     de hipótesis sin validar en el docstring del módulo).
     """
+    learned = _predict_learned(analysis)
+    if learned is not None:
+        return learned
+
     base = 0.50
 
     rsi_val = analysis["rsi"]
