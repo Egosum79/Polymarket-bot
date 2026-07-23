@@ -2,3 +2,4 @@
 {"timestamp": "2026-07-23T17:45:44.661407+00:00", "action": "NO_MARKET"}
 {"timestamp": "2026-07-23T17:50:14.925004+00:00", "action": "NO_MARKET"}
 {"timestamp": "2026-07-23T17:55:12.142442+00:00", "action": "BET", "bet_side": "UP", "bet_usd": 10.0, "our_prob": 0.457, "market_prob": 0.345, "edge": 0.112, "btc_price": 64817.22, "rsi": 50.29, "ema_diff": -8.33, "window_momentum": -0.0259, "market_id": "3032962", "market_q": "Bitcoin Up or Down - July 23, 1:45PM-2:00PM ET"}
+{"timestamp": "2026-07-23T18:00:20.075923+00:00", "action": "PASS", "bet_side": null, "bet_usd": 0, "our_prob": 0.5555, "market_prob": 0.545, "edge": 0.0105, "btc_price": 64709.63, "rsi": 24.51, "ema_diff": -51.71, "window_momentum": 0.011, "market_id": "3033029", "market_q": "Bitcoin Up or Down - July 23, 2:00PM-2:15PM ET"}
