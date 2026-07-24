@@ -28,24 +28,39 @@ jobs:
         run: |
           git config --global user.email "btc-scalp-bot@github"
           git config --global user.name "BTC Scalp Bot"
-          git add btc_scalp_log.jsonl || true
-          if git diff --cached --quiet; then
+
+          # Capturar SOLO la línea nueva que este ciclo agregó (comparando
+          # contra el último commit, antes de tocar nada de git). Con el bot
+          # corriendo cada 5 min y varios workflows compitiendo por el mismo
+          # repo, un simple "rebase + reintento" puede toparse con un
+          # CONFLICT (content) real si dos corridas casi simultáneas tocan
+          # las mismas líneas de contexto de un archivo corto — eso NO se
+          # resuelve reintentando el mismo rebase. En vez de eso, en cada
+          # intento se parte de la base más reciente y se reaplica esta
+          # línea limpia encima, así nunca hay que reconciliar dos versiones
+          # divergentes del archivo.
+          NEW_CONTENT=$(git diff -- btc_scalp_log.jsonl | grep '^+' | grep -v '^+++' | sed 's/^+//')
+
+          if [ -z "$NEW_CONTENT" ]; then
             echo "Sin cambios en el log, nada que commitear."
-          else
+            exit 0
+          fi
+
+          pushed=0
+          for i in 1 2 3 4 5 6 7 8; do
+            git fetch origin main
+            git reset --hard origin/main
+            printf '%s\n' "$NEW_CONTENT" >> btc_scalp_log.jsonl
+            git add btc_scalp_log.jsonl
             git commit -m "Scalp cycle $(date '+%Y-%m-%d %H:%M UTC')"
-            pushed=0
-            for i in 1 2 3 4 5; do
-              git fetch origin main
-              if git rebase origin/main && git push origin HEAD:main; then
-                pushed=1
-                break
-              fi
-              echo "Push rechazado (intento $i), reintentando..."
-              git rebase --abort || true
-              sleep $((RANDOM % 5 + 1))
-            done
-            if [ "$pushed" -ne 1 ]; then
-              echo "::error::No se pudo pushear btc_scalp_log.jsonl tras 5 intentos"
-              exit 1
+            if git push origin HEAD:main; then
+              pushed=1
+              break
             fi
+            echo "Push rechazado (intento $i), reintentando..."
+            sleep $((RANDOM % 5 + 1))
+          done
+          if [ "$pushed" -ne 1 ]; then
+            echo "::error::No se pudo pushear btc_scalp_log.jsonl tras 8 intentos"
+            exit 1
           fi

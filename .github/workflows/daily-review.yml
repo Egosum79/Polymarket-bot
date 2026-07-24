@@ -32,26 +32,39 @@ jobs:
         run: |
           git config --global user.email "settle-bets@github"
           git config --global user.name "Settle Bets"
-          git add settlements.jsonl || true
-          if git diff --cached --quiet; then
+
+          # Capturar SOLO las líneas nuevas que este ciclo agregó, antes de
+          # tocar nada de git. Con varios workflows compitiendo por el mismo
+          # repo, un simple "rebase + reintento" puede toparse con un
+          # CONFLICT (content) real en vez de solo un push rechazado — eso
+          # NO se resuelve reintentando el mismo rebase. En cada intento se
+          # parte de la base más reciente y se reaplican estas líneas
+          # limpias encima, así nunca hay que reconciliar dos versiones
+          # divergentes del archivo.
+          NEW_CONTENT=$(git diff -- settlements.jsonl | grep '^+' | grep -v '^+++' | sed 's/^+//')
+
+          if [ -z "$NEW_CONTENT" ]; then
             echo "Sin cambios en settlements.jsonl, nada que commitear."
-          else
+            exit 0
+          fi
+
+          pushed=0
+          for i in 1 2 3 4 5 6 7 8; do
+            git fetch origin main
+            git reset --hard origin/main
+            printf '%s\n' "$NEW_CONTENT" >> settlements.jsonl
+            git add settlements.jsonl
             git commit -m "Settle bets $(date '+%Y-%m-%d %H:%M UTC')"
-            pushed=0
-            for i in 1 2 3 4 5; do
-              git fetch origin main
-              if git rebase origin/main && git push origin HEAD:main; then
-                pushed=1
-                break
-              fi
-              echo "Push rechazado (intento $i), reintentando..."
-              git rebase --abort || true
-              sleep $((RANDOM % 5 + 1))
-            done
-            if [ "$pushed" -ne 1 ]; then
-              echo "::error::No se pudo pushear settlements.jsonl tras 5 intentos"
-              exit 1
+            if git push origin HEAD:main; then
+              pushed=1
+              break
             fi
+            echo "Push rechazado (intento $i), reintentando..."
+            sleep $((RANDOM % 5 + 1))
+          done
+          if [ "$pushed" -ne 1 ]; then
+            echo "::error::No se pudo pushear settlements.jsonl tras 8 intentos"
+            exit 1
           fi
 
       - name: Recalibrar modelo con resultados reales (no-op si aún no hay datos suficientes)
@@ -61,26 +74,44 @@ jobs:
         run: |
           git config --global user.email "retrain-model@github"
           git config --global user.name "Retrain Model"
-          git add bot2_weights.json bot3_weights.json 2>/dev/null || true
-          if git diff --cached --quiet; then
-            echo "Sin cambios en los pesos del modelo, nada que commitear."
-          else
-            git commit -m "Retrain model $(date '+%Y-%m-%d %H:%M UTC')"
-            pushed=0
-            for i in 1 2 3 4 5; do
-              git fetch origin main
-              if git rebase origin/main && git push origin HEAD:main; then
-                pushed=1
-                break
-              fi
-              echo "Push rechazado (intento $i), reintentando..."
-              git rebase --abort || true
-              sleep $((RANDOM % 5 + 1))
-            done
-            if [ "$pushed" -ne 1 ]; then
-              echo "::error::No se pudo pushear los pesos del modelo tras 5 intentos"
-              exit 1
+
+          # A diferencia de los logs (append-only), los archivos de pesos se
+          # reescriben COMPLETOS cada corrida — se captura el contenido final
+          # tal cual lo dejó retrain_model.py, y se reaplica igual en cada
+          # reintento sobre la base más reciente (mismo motivo que en los
+          # otros workflows: evitar que git tenga que reconciliar dos
+          # versiones divergentes del archivo).
+          BOT2_CONTENT=$(cat bot2_weights.json 2>/dev/null || true)
+          BOT3_CONTENT=$(cat bot3_weights.json 2>/dev/null || true)
+
+          if [ -z "$BOT2_CONTENT" ] && [ -z "$BOT3_CONTENT" ]; then
+            echo "Sin pesos generados todavía (no hay datos suficientes), nada que commitear."
+            exit 0
+          fi
+
+          pushed=0
+          for i in 1 2 3 4 5 6 7 8; do
+            git fetch origin main
+            git reset --hard origin/main
+            [ -n "$BOT2_CONTENT" ] && printf '%s' "$BOT2_CONTENT" > bot2_weights.json
+            [ -n "$BOT3_CONTENT" ] && printf '%s' "$BOT3_CONTENT" > bot3_weights.json
+            git add bot2_weights.json bot3_weights.json 2>/dev/null || true
+            if git diff --cached --quiet; then
+              echo "Sin cambios en los pesos, nada que commitear."
+              pushed=1
+              break
             fi
+            git commit -m "Retrain model $(date '+%Y-%m-%d %H:%M UTC')"
+            if git push origin HEAD:main; then
+              pushed=1
+              break
+            fi
+            echo "Push rechazado (intento $i), reintentando..."
+            sleep $((RANDOM % 5 + 1))
+          done
+          if [ "$pushed" -ne 1 ]; then
+            echo "::error::No se pudo pushear los pesos del modelo tras 8 intentos"
+            exit 1
           fi
 
       - name: Generar y publicar reporte diario
