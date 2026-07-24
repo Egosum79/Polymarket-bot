@@ -80,3 +80,4 @@
 {"timestamp": "2026-07-24T00:10:12.040230+00:00", "action": "NO_MARKET"}
 {"timestamp": "2026-07-24T00:15:12.258390+00:00", "action": "NO_MARKET"}
 {"timestamp": "2026-07-24T00:20:14.324543+00:00", "action": "NO_MARKET"}
+{"timestamp": "2026-07-24T00:25:12.341432+00:00", "action": "BET", "bet_side": "DOWN", "bet_usd": 10.0, "our_prob": 0.45589999999999997, "market_prob": 0.17500000000000004, "edge": 0.2809, "btc_price": 64970.01, "rsi": 64.17, "ema_diff": 4.65, "window_momentum": 0.0281, "market_id": "3048024", "market_q": "Bitcoin Up or Down - July 23, 8:15PM-8:30PM ET"}
