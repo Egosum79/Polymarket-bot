@@ -49,3 +49,4 @@
 {"timestamp": "2026-07-25T04:02:07.264013+00:00", "action": "SKIP", "reason": "NEUTRAL", "btc_price": 64098.0, "rsi": 52.74, "ema_signal": "DOWN", "macd_signal": "UP", "momentum_1h": 0.02}
 {"timestamp": "2026-07-25T05:00:18.732681+00:00", "action": "SKIP", "reason": "NEUTRAL", "btc_price": 64191.08, "rsi": 55.81, "ema_signal": "DOWN", "macd_signal": "UP", "momentum_1h": 0.015}
 {"timestamp": "2026-07-25T06:02:15.528890+00:00", "action": "SKIP", "reason": "NEUTRAL", "btc_price": 64027.32, "rsi": 54.07, "ema_signal": "DOWN", "macd_signal": "UP", "momentum_1h": 0.005}
+{"timestamp": "2026-07-25T07:00:18.122326+00:00", "action": "PASS", "bet_side": null, "bet_usd": 0, "our_prob": 0.54, "market_prob": 0.515, "edge": 0.025, "btc_price": 64012.0, "rsi": 36.94, "ema_signal": "DOWN", "macd_signal": "UP", "strength": 0.667, "momentum_1h": 0.003, "market_id": "3078317", "market_q": "Bitcoin Up or Down - July 25, 3:00AM-3:15AM ET"}
