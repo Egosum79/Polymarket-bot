@@ -63,3 +63,4 @@
 {"timestamp": "2026-07-25T15:48:14.985962+00:00", "action": "SKIP", "reason": "NEUTRAL", "btc_price": 64210.01, "rsi": 58.82, "ema_signal": "DOWN", "macd_signal": "UP", "momentum_1h": -0.006}
 {"timestamp": "2026-07-25T16:00:16.196790+00:00", "action": "SKIP", "reason": "NEUTRAL", "btc_price": 64187.3, "rsi": 58.23, "ema_signal": "DOWN", "macd_signal": "UP", "momentum_1h": 0.008}
 {"timestamp": "2026-07-25T17:00:17.719189+00:00", "action": "SKIP", "reason": "NEUTRAL", "btc_price": 64206.61, "rsi": 57.5, "ema_signal": "DOWN", "macd_signal": "UP", "momentum_1h": 0.0}
+{"timestamp": "2026-07-25T18:00:16.973854+00:00", "action": "SKIP", "reason": "NEUTRAL", "btc_price": 64277.28, "rsi": 56.12, "ema_signal": "DOWN", "macd_signal": "UP", "momentum_1h": 0.015}
