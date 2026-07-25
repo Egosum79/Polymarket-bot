@@ -501,3 +501,4 @@
 {"timestamp": "2026-07-25T11:15:14.472675+00:00", "action": "NO_MARKET"}
 {"timestamp": "2026-07-25T11:20:12.235898+00:00", "action": "NO_MARKET"}
 {"timestamp": "2026-07-25T11:25:09.660364+00:00", "action": "PASS", "bet_side": null, "bet_usd": 0, "our_prob": 0.499, "market_prob": 0.46499999999999997, "edge": 0.034, "btc_price": 64084.0, "rsi": 72.64, "ema_diff": 5.97, "window_momentum": 0.0219, "market_id": "3079915", "market_q": "Bitcoin Up or Down - July 25, 7:15AM-7:30AM ET"}
+{"timestamp": "2026-07-25T11:30:14.783152+00:00", "action": "NO_MARKET"}
