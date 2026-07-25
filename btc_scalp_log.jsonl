@@ -411,3 +411,4 @@
 {"timestamp": "2026-07-25T03:56:38.299938+00:00", "action": "SKIP", "reason": "YA_APOSTADO", "market_id": "3076312"}
 {"timestamp": "2026-07-25T04:02:04.152163+00:00", "action": "BET", "bet_side": "DOWN", "bet_usd": 10.0, "our_prob": 0.4617, "market_prob": 0.31000000000000005, "edge": 0.1517, "btc_price": 64098.0, "rsi": 56.7, "ema_diff": 8.17, "window_momentum": 0.0166, "market_id": "3076890", "market_q": "Bitcoin Up or Down - July 25, 12:00AM-12:15AM ET"}
 {"timestamp": "2026-07-25T04:05:09.481787+00:00", "action": "SKIP", "reason": "YA_APOSTADO", "market_id": "3076890"}
+{"timestamp": "2026-07-25T04:11:39.294222+00:00", "action": "PASS", "bet_side": null, "bet_usd": 0, "our_prob": 0.55, "market_prob": 0.515, "edge": 0.035, "btc_price": 64124.39, "rsi": 95.62, "ema_diff": 13.39, "window_momentum": null, "market_id": "3076941", "market_q": "Bitcoin Up or Down - July 25, 12:15AM-12:30AM ET"}
