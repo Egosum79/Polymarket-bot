@@ -845,3 +845,4 @@
 {"timestamp": "2026-07-26T15:35:36.637241+00:00", "action": "PASS", "bet_side": null, "bet_usd": 0, "our_prob": 0.5365, "market_prob": 0.495, "edge": 0.0415, "btc_price": 64758.54, "rsi": 44.32, "ema_diff": 0.41, "window_momentum": 0.013, "market_id": "3101331", "market_q": "Bitcoin Up or Down - July 26, 11:30AM-11:45AM ET"}
 {"timestamp": "2026-07-26T15:40:12.887085+00:00", "action": "BET", "bet_side": "DOWN", "bet_usd": 10.0, "our_prob": 0.4272, "market_prob": 0.04500000000000004, "edge": 0.3822, "btc_price": 64805.54, "rsi": 64.7, "ema_diff": 21.85, "window_momentum": 0.0856, "market_id": "3101331", "market_q": "Bitcoin Up or Down - July 26, 11:30AM-11:45AM ET"}
 {"timestamp": "2026-07-26T15:45:00.537040+00:00", "action": "NO_MARKET"}
+{"timestamp": "2026-07-26T15:46:01.865411+00:00", "action": "NO_MARKET"}
