@@ -78,10 +78,20 @@ LOG_FILE      = "btc_bot_log.jsonl"
 # DESCARGA DE DATOS
 # ─────────────────────────────────────────────────────
 
-def fetch(url: str) -> list | dict:
-    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-    with urllib.request.urlopen(req, timeout=15) as resp:
-        return json.loads(resp.read())
+def fetch(url: str, retries: int = 3, backoff: float = 2.0) -> list | dict:
+    """Descarga y parsea JSON, reintentando ante timeouts/errores de red
+    transitorios (ej. un bache momentáneo del proveedor) antes de rendirse."""
+    last_err = None
+    for attempt in range(1, retries + 1):
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                return json.loads(resp.read())
+        except Exception as e:
+            last_err = e
+            if attempt < retries:
+                time.sleep(backoff)
+    raise last_err
 
 
 def get_candles(symbol: str = SYMBOL, interval: str = INTERVAL, limit: int = CANDLES) -> list[dict]:
