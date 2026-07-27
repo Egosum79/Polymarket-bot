@@ -153,7 +153,14 @@ def _predict_learned(analysis: dict, weights_path: str = WEIGHTS_FILE) -> float 
         with open(p, encoding="utf-8") as f:
             model = json.load(f)
         means, stds, weights = model["means"], model["stds"], model["weights"]
+        clip_low  = model.get("clip_low")
+        clip_high = model.get("clip_high")
         raw = [analysis["rsi"], analysis["ema_diff"], analysis["window_momentum"]]
+        if clip_low and clip_high:
+            # Recorta a lo visto en entrenamiento antes de estandarizar — un
+            # valor en vivo mucho más extremo que todo lo entrenado dispara
+            # una probabilidad sobreconfiada si no se topa (auditoría 2026-07-27).
+            raw = [max(clip_low[i], min(clip_high[i], raw[i])) for i in range(len(raw))]
         std = [(x - m) / s for x, m, s in zip(raw, means, stds)]
         z = weights[0] + sum(w * x for w, x in zip(weights[1:], std))
         prob = 1 / (1 + math.exp(-max(-30.0, min(30.0, z))))

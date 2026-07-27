@@ -22,9 +22,12 @@ CÓMO FUNCIONA:
      dirección REAL de BTC (no si ganamos — si subió o bajó),
      y los valores de los indicadores en el momento de la señal
   3. Si hay al menos MIN_SAMPLES apuestas liquidadas para ese bot,
-     ajusta P(UP) = sigmoid(w0 + w1*x1 + ... ) por descenso de
-     gradiente sobre esos datos
-  4. Guarda los pesos en bot2_weights.json / bot3_weights.json
+     recorta cada feature a su rango [percentil 1, percentil 99] visto
+     en el entrenamiento (evita que un valor en vivo mucho más extremo
+     que todo lo visto antes dispare una probabilidad sobreconfiada —
+     auditoría 2026-07-27), y ajusta P(UP) = sigmoid(w0 + w1*x1 + ...)
+     por descenso de gradiente sobre esos datos
+  4. Guarda los pesos (+ los límites de recorte) en bot2_weights.json / bot3_weights.json
   5. Si NO hay suficientes muestras todavía, no toca nada — los
      bots siguen usando su heurística original hasta entonces
 
@@ -72,6 +75,40 @@ LEARNING_RATE    = 0.3
 def sigmoid(z: float) -> float:
     z = max(-30.0, min(30.0, z))   # evita overflow en math.exp
     return 1.0 / (1.0 + math.exp(-z))
+
+
+def percentile(values: list[float], p: float) -> float:
+    """Percentil p (0-100) por interpolación lineal, sin dependencias externas."""
+    s = sorted(values)
+    if len(s) == 1:
+        return s[0]
+    rank = (p / 100) * (len(s) - 1)
+    lo, hi = int(math.floor(rank)), int(math.ceil(rank))
+    if lo == hi:
+        return s[lo]
+    frac = rank - lo
+    return s[lo] + (s[hi] - s[lo]) * frac
+
+
+def clip_bounds(X: list[list[float]], low_p: float = 1, high_p: float = 99) -> tuple[list[float], list[float]]:
+    """
+    Límites [percentil 1, percentil 99] de cada feature, calculados sobre los
+    datos de entrenamiento. Ver aviso de sobreconfianza por extrapolación en
+    el docstring del módulo: sin esto, un valor en vivo mucho más extremo que
+    cualquiera visto durante el ajuste (ej. un momentum de ventana atípico)
+    dispara un logit desproporcionado y una probabilidad pegada al techo.
+    """
+    n_features = len(X[0])
+    lows, highs = [], []
+    for j in range(n_features):
+        col = [row[j] for row in X]
+        lows.append(percentile(col, low_p))
+        highs.append(percentile(col, high_p))
+    return lows, highs
+
+
+def clip_row(row: list[float], lows: list[float], highs: list[float]) -> list[float]:
+    return [max(lows[j], min(highs[j], row[j])) for j in range(len(row))]
 
 
 def standardize(X: list[list[float]]) -> tuple[list[list[float]], list[float], list[float]]:
@@ -176,7 +213,9 @@ def retrain_bot(log_path: str, bot_name: str, feature_names: list[str],
         print(f"  ⚠️  Muestra todavía chica (< {CONFIDENT_AT}) — se ajusta igual, "
               f"pero interpreta el resultado con cautela.")
 
-    X_std, means, stds = standardize(X)
+    clip_low, clip_high = clip_bounds(X)
+    X_clipped = [clip_row(row, clip_low, clip_high) for row in X]
+    X_std, means, stds = standardize(X_clipped)
     weights = fit_logistic(X_std, y)
 
     # Precisión sobre los mismos datos de entrenamiento (informativo, no es
@@ -193,6 +232,8 @@ def retrain_bot(log_path: str, bot_name: str, feature_names: list[str],
         "trained_at":     datetime.now(timezone.utc).isoformat(),
         "n_samples":      len(X),
         "features":       feature_names,
+        "clip_low":       clip_low,
+        "clip_high":      clip_high,
         "means":          means,
         "stds":           stds,
         "weights":        weights,   # [intercepto, w1, w2, ...] sobre features estandarizadas
