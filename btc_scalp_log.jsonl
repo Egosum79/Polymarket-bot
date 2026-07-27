@@ -1174,3 +1174,4 @@
 {"timestamp": "2026-07-27T18:40:14.680445+00:00", "action": "NO_MARKET"}
 {"timestamp": "2026-07-27T18:45:12.357891+00:00", "action": "BET", "bet_side": "DOWN", "bet_usd": 10.0, "our_prob": 0.6056, "market_prob": 0.395, "edge": 0.2106, "btc_price": 64839.99, "rsi": 40.53, "ema_diff": -3.13, "window_momentum": -0.0278, "market_id": "3116095", "market_q": "Bitcoin Up or Down - July 27, 2:45PM-3:00PM ET"}
 {"timestamp": "2026-07-27T18:50:14.205935+00:00", "action": "SKIP", "reason": "YA_APOSTADO", "market_id": "3116095"}
+{"timestamp": "2026-07-27T18:55:11.807211+00:00", "action": "SKIP", "reason": "YA_APOSTADO", "market_id": "3116095"}
