@@ -150,6 +150,37 @@ def analyze_btc(entries: list[dict]) -> dict:
     }
 
 
+def analyze_esports(entries: list[dict]) -> dict:
+    """Analiza entradas del esports_bot (esports_bot_log.jsonl)."""
+    total     = len(entries)
+    bets_yes  = [e for e in entries if e.get("action") == "BET" and e.get("side") == "YES"]
+    bets_no   = [e for e in entries if e.get("action") == "BET" and e.get("side") == "NO"]
+    skipped   = [e for e in entries if e.get("action") == "SKIP"]
+    no_market = [e for e in entries if e.get("action") == "NO_MARKET"]
+
+    edges = [abs(e.get("edge", 0)) for e in entries if e.get("action") == "BET" and e.get("edge")]
+    avg_edge = sum(edges) / len(edges) if edges else 0
+
+    total_bet = sum(e.get("bet_usd", 0) for e in entries if e.get("action") == "BET")
+
+    top = sorted(
+        [e for e in entries if e.get("action") == "BET"],
+        key=lambda x: abs(x.get("edge", 0)),
+        reverse=True
+    )[:3]
+
+    return {
+        "total":      total,
+        "bets_yes":   len(bets_yes),
+        "bets_no":    len(bets_no),
+        "skipped":    len(skipped),
+        "no_market":  len(no_market),
+        "avg_edge":   avg_edge,
+        "total_bet":  total_bet,
+        "top":        top,
+    }
+
+
 def _summarize_settlements(rows: list[dict]) -> dict:
     total    = len(rows)
     wins     = sum(1 for r in rows if r.get("won"))
@@ -178,10 +209,12 @@ def analyze_pnl(settlements: list[dict]) -> dict:
     bot1 = [s for s in settlements if s.get("bot") == "bot1"]
     bot2 = [s for s in settlements if s.get("bot") == "bot2"]
     bot3 = [s for s in settlements if s.get("bot") == "bot3"]
+    esports = [s for s in settlements if s.get("bot") == "esports"]
     return {
         "bot1":     _summarize_settlements(bot1),
         "bot2":     _summarize_settlements(bot2),
         "bot3":     _summarize_settlements(bot3),
+        "esports":  _summarize_settlements(esports),
         "combined": _summarize_settlements(settlements),
     }
 
@@ -221,10 +254,12 @@ def compute_capital(settlements: list[dict], initial: float = CAPITAL_INICIAL) -
     bot1 = [s for s in settlements if s.get("bot") == "bot1"]
     bot2 = [s for s in settlements if s.get("bot") == "bot2"]
     bot3 = [s for s in settlements if s.get("bot") == "bot3"]
+    esports = [s for s in settlements if s.get("bot") == "esports"]
     return {
-        "bot1": curve(bot1),
-        "bot2": curve(bot2),
-        "bot3": curve(bot3),
+        "bot1":    curve(bot1),
+        "bot2":    curve(bot2),
+        "bot3":    curve(bot3),
+        "esports": curve(esports),
     }
 
 
@@ -270,6 +305,7 @@ def _capital_table_md(label: str, c: dict) -> list[str]:
 def build_report(summary: dict, all_entries: list[dict],
                  btc_summary: dict, all_btc_entries: list[dict],
                  scalp_summary: dict, all_scalp_entries: list[dict],
+                 esports_summary: dict, all_esports_entries: list[dict],
                  pnl: dict, capital: dict) -> tuple[str, str]:
     """Retorna (título, cuerpo) del issue de GitHub."""
     now    = datetime.now(timezone.utc)
@@ -299,10 +335,11 @@ def build_report(summary: dict, all_entries: list[dict],
             "",
         ]
     else:
-        lines += _pnl_table_md("Combinado (Bot 1 + Bot 2 + Bot 3)", pnl["combined"])
+        lines += _pnl_table_md("Combinado (Bot 1 + Bot 2 + Bot 3 + Bot 4)", pnl["combined"])
         lines += _pnl_table_md("Bot 1: Polymarket Señales", pnl["bot1"])
         lines += _pnl_table_md("Bot 2: BTC Dirección 1H", pnl["bot2"])
         lines += _pnl_table_md("Bot 3: BTC Scalp 15min", pnl["bot3"])
+        lines += _pnl_table_md("Bot 4: Esports", pnl["esports"])
         lines += [
             "*Nota: cada ciclo de señal se cuenta como una apuesta independiente, "
             "sin descontar posiciones repetidas sobre el mismo mercado (Bot 3 sí evita "
@@ -314,6 +351,7 @@ def build_report(summary: dict, all_entries: list[dict],
         lines += _capital_table_md("Bot 1: Polymarket Señales", capital["bot1"])
         lines += _capital_table_md("Bot 2: BTC Dirección 1H", capital["bot2"])
         lines += _capital_table_md("Bot 3: BTC Scalp 15min", capital["bot3"])
+        lines += _capital_table_md("Bot 4: Esports", capital["esports"])
         lines += [
             "*Nota: no reserva capital para apuestas todavía abiertas — puede mostrar "
             "más exposición simultánea de la que $100 reales permitirían.*",
@@ -450,11 +488,57 @@ def build_report(summary: dict, all_entries: list[dict],
             "",
         ]
 
+    # ── Sección Esports Bot ────────────────────────────────────────────────
+    total_all_esports = len(all_esports_entries)
+    lines += [
+        "---",
+        "",
+        "## 🎮 Bot 4: Esports (esports_bot_log.jsonl)",
+        "",
+        "### Ciclos (últimas 24h)",
+        "",
+        f"| Métrica | Valor |",
+        f"|---------|-------|",
+        f"| Total ciclos | {esports_summary['total']} |",
+        f"| 🟢 Apuestas YES | {esports_summary['bets_yes']} |",
+        f"| 🔴 Apuestas NO | {esports_summary['bets_no']} |",
+        f"| ⏭️ Sin edge suficiente (SKIP) | {esports_summary['skipped']} |",
+        f"| 🔍 Sin mercado disponible | {esports_summary['no_market']} |",
+        f"| Edge promedio (apuestas) | {esports_summary['avg_edge']*100:.1f}% |",
+        f"| Apuesta simulada total | ${esports_summary['total_bet']:.2f} |",
+        f"| Total histórico en log | {total_all_esports} |",
+        "",
+    ]
+
+    if esports_summary["top"]:
+        lines += [
+            "#### 🎯 Mejores apuestas del día",
+            "",
+        ]
+        for i, s in enumerate(esports_summary["top"], 1):
+            side = s.get("side", "?")
+            side_emoji = "🟢" if side == "YES" else "🔴"
+            link = f"https://polymarket.com/event/{s.get('slug','')}"
+            lines += [
+                f"**{i}. {side_emoji} {s.get('team_bet','?')} ({side})** — Edge: {s.get('edge',0)*100:.1f}% — ${s.get('bet_usd',0):.2f}",
+                f"> {s.get('game','?')}: {s.get('market','')[:100]}",
+                f"> Nuestra prob: {s.get('our_prob',0)*100:.0f}% | Mercado: {s.get('market_price',0)*100:.0f}¢ YES",
+                f"> [Ver en Polymarket]({link})",
+                "",
+            ]
+    else:
+        lines += [
+            "#### ⚪ Sin apuestas en las últimas 24h",
+            "",
+            "El bot no encontró oportunidades con edge ≥ 7% en este período.",
+            "",
+        ]
+
     lines += [
         "---",
         "",
         "*⚠️ Este reporte es informativo. No constituye asesoría financiera.*",
-        "*Los tres bots operan en modo SIMULACIÓN — no se ejecutan apuestas reales.*",
+        "*Los cuatro bots operan en modo SIMULACIÓN — no se ejecutan apuestas reales.*",
     ]
 
     return title, "\n".join(lines)
@@ -472,6 +556,7 @@ def _table_row(cells: list[str]) -> str:
 def build_email_html(summary: dict, all_entries: list[dict],
                       btc_summary: dict, all_btc_entries: list[dict],
                       scalp_summary: dict, all_scalp_entries: list[dict],
+                      esports_summary: dict, all_esports_entries: list[dict],
                       pnl: dict, capital: dict) -> str:
     now   = datetime.now(timezone.utc)
     today = now.strftime("%Y-%m-%d")
@@ -526,10 +611,11 @@ def build_email_html(summary: dict, all_entries: list[dict],
             "activos aún no han vencido.</p>"
         )
     else:
-        parts.append(pnl_block("Combinado (Bot 1 + Bot 2 + Bot 3)", pnl["combined"]))
+        parts.append(pnl_block("Combinado (Bot 1 + Bot 2 + Bot 3 + Bot 4)", pnl["combined"]))
         parts.append(pnl_block("Bot 1: Polymarket Señales", pnl["bot1"]))
         parts.append(pnl_block("Bot 2: BTC Dirección 1H", pnl["bot2"]))
         parts.append(pnl_block("Bot 3: BTC Scalp 15min", pnl["bot3"]))
+        parts.append(pnl_block("Bot 4: Esports", pnl["esports"]))
         parts.append(
             "<p style='color:#999;font-size:12px'>Nota: cada ciclo de señal se cuenta "
             "como una apuesta independiente, sin descontar posiciones repetidas sobre "
@@ -539,6 +625,7 @@ def build_email_html(summary: dict, all_entries: list[dict],
         parts.append(capital_block("Bot 1: Polymarket Señales", capital["bot1"]))
         parts.append(capital_block("Bot 2: BTC Dirección 1H", capital["bot2"]))
         parts.append(capital_block("Bot 3: BTC Scalp 15min", capital["bot3"]))
+        parts.append(capital_block("Bot 4: Esports", capital["esports"]))
         parts.append(
             "<p style='color:#999;font-size:12px'>Nota: no reserva capital para apuestas "
             "todavía abiertas — puede mostrar más exposición simultánea de la que $100 "
@@ -636,8 +723,37 @@ def build_email_html(summary: dict, all_entries: list[dict],
 
     parts += [
         "<hr>",
+        "<h3>🎮 Bot 4: Esports</h3>",
+        metrics_table([
+            ("Total ciclos", str(esports_summary['total'])),
+            ("🟢 Apuestas YES", str(esports_summary['bets_yes'])),
+            ("🔴 Apuestas NO", str(esports_summary['bets_no'])),
+            ("⏭️ Sin edge suficiente (SKIP)", str(esports_summary['skipped'])),
+            ("🔍 Sin mercado disponible", str(esports_summary['no_market'])),
+            ("Edge promedio (apuestas)", f"{esports_summary['avg_edge']*100:.1f}%"),
+            ("Apuesta simulada total", f"${esports_summary['total_bet']:.2f}"),
+            ("Total histórico en log", str(len(all_esports_entries))),
+        ]),
+    ]
+
+    if esports_summary["top"]:
+        parts.append("<h4>🎯 Mejores apuestas del día</h4><ul>")
+        for s in esports_summary["top"]:
+            side = s.get("side", "?")
+            side_emoji = "🟢" if side == "YES" else "🔴"
+            parts.append(
+                f"<li>{side_emoji} <b>{s.get('team_bet','?')} ({side})</b> — Edge: {s.get('edge',0)*100:.1f}% — "
+                f"Nuestra prob: {s.get('our_prob',0)*100:.0f}% | Mercado: {s.get('market_price',0)*100:.0f}¢<br>"
+                f"<span style='color:#555'>{s.get('game','?')}: {(s.get('market') or '')[:100]}</span></li>"
+            )
+        parts.append("</ul>")
+    else:
+        parts.append("<p>⚪ Sin apuestas en las últimas 24h.</p>")
+
+    parts += [
+        "<hr>",
         "<p style='color:#999;font-size:12px'>⚠️ Este reporte es informativo. No constituye asesoría "
-        "financiera. Los tres bots operan en modo SIMULACIÓN — no se ejecutan apuestas reales.</p>",
+        "financiera. Los cuatro bots operan en modo SIMULACIÓN — no se ejecutan apuestas reales.</p>",
         "</div>",
     ]
     return "\n".join(parts)
@@ -753,6 +869,15 @@ def main():
 
     scalp_summary = analyze_btc(recent_scalp_entries)
 
+    # Bot 4: Esports
+    all_esports_entries    = load_log("esports_bot_log.jsonl")
+    recent_esports_entries = entries_last_24h(all_esports_entries)
+
+    print(f"\n🎮 [Bot 4] Entradas totales: {len(all_esports_entries)}")
+    print(f"🎮 [Bot 4] Últimas 24h:      {len(recent_esports_entries)}")
+
+    esports_summary = analyze_esports(recent_esports_entries)
+
     # Rentabilidad real de apuestas ya resueltas (ver settle_bets.py)
     settlements = load_log("settlements.jsonl")
     print(f"\n💰 Apuestas liquidadas (histórico): {len(settlements)}")
@@ -760,9 +885,11 @@ def main():
     capital = compute_capital(settlements)
 
     title, body = build_report(summary, all_entries, btc_summary, all_btc_entries,
-                                scalp_summary, all_scalp_entries, pnl, capital)
+                                scalp_summary, all_scalp_entries,
+                                esports_summary, all_esports_entries, pnl, capital)
     html_body   = build_email_html(summary, all_entries, btc_summary, all_btc_entries,
-                                    scalp_summary, all_scalp_entries, pnl, capital)
+                                    scalp_summary, all_scalp_entries,
+                                    esports_summary, all_esports_entries, pnl, capital)
 
     print(f"\n📧 Enviando reporte por correo a {REPORT_TO}...")
     send_email_report(title, html_body)

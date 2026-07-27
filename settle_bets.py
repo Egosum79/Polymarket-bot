@@ -4,8 +4,8 @@
   LIQUIDADOR DE APUESTAS SIMULADAS
   Revisa mercados de Polymarket ya resueltos y calcula el
   P&L real (ganancia/pérdida en USD) de las apuestas que
-  polymarket_bot.py, btc_direction_bot.py y btc_scalp_bot.py
-  registraron.
+  polymarket_bot.py, btc_direction_bot.py, btc_scalp_bot.py
+  y esports_bot.py registraron.
 =======================================================
 
 Por qué existe:
@@ -57,6 +57,7 @@ SETTLEMENTS_FILE  = "settlements.jsonl"
 BOT1_LOG          = "bot_log.jsonl"
 BOT2_LOG          = "btc_bot_log.jsonl"
 BOT3_LOG          = "btc_scalp_log.jsonl"
+BOT4_LOG          = "esports_bot_log.jsonl"
 
 
 def fetch(url: str, retries: int = 3, backoff: float = 2.0):
@@ -202,6 +203,49 @@ def settle_updown_bot(entries: list[dict], bot_name: str, already_settled: set) 
     return results
 
 
+def settle_esports(entries: list[dict], already_settled: set) -> list[dict]:
+    """
+    esports_bot_log.jsonl: 'side' ya es YES/NO directamente sobre el mercado
+    (igual que bot1), pero 'market_price' siempre guarda el precio YES —
+    hay que invertirlo a (1 - market_price) si la apuesta fue NO.
+    """
+    results = []
+    for e in entries:
+        if e.get("action") != "BET":
+            continue
+        market_id = e.get("market_id")
+        if not market_id:
+            continue
+        key = bet_key("esports", e)
+        if key in already_settled:
+            continue
+        market = get_market(market_id)
+        if market is None:
+            continue
+        outcome = resolve_outcome(market)
+        if outcome is None:
+            continue
+        bet_side = e.get("side")
+        won = (bet_side == outcome)
+        market_price = e.get("market_price") or 0.5
+        bet_price = market_price if bet_side == "YES" else round(1 - market_price, 4)
+        pnl = pnl_for_bet(won, bet_price, e.get("bet_usd", 0))
+        results.append({
+            "key":        key,
+            "bot":        "esports",
+            "market_id":  market_id,
+            "question":   e.get("market", ""),
+            "bet_side":   bet_side,
+            "bet_usd":    e.get("bet_usd", 0),
+            "outcome":    outcome,
+            "won":        won,
+            "pnl":        round(pnl, 4),
+            "timestamp":  e.get("timestamp"),
+            "settled_at": datetime.now(timezone.utc).isoformat(),
+        })
+    return results
+
+
 def main():
     print("=" * 60)
     print("  LIQUIDADOR DE APUESTAS SIMULADAS")
@@ -213,10 +257,12 @@ def main():
     bot1_entries = load_jsonl(BOT1_LOG)
     bot2_entries = load_jsonl(BOT2_LOG)
     bot3_entries = load_jsonl(BOT3_LOG)
+    bot4_entries = load_jsonl(BOT4_LOG)
 
     new_results = (settle_bot1(bot1_entries, already_settled)
                    + settle_updown_bot(bot2_entries, "bot2", already_settled)
-                   + settle_updown_bot(bot3_entries, "bot3", already_settled))
+                   + settle_updown_bot(bot3_entries, "bot3", already_settled)
+                   + settle_esports(bot4_entries, already_settled))
 
     print(f"  Apuestas liquidadas previamente: {len(settled_so_far)}")
     print(f"  Mercados aún pendientes de resolver o recién liquidados: revisando...")
