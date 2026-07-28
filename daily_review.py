@@ -138,6 +138,14 @@ def analyze_btc(entries: list[dict]) -> dict:
         reverse=True
     )[:3]
 
+    # Ciclos que cayeron a la heurística de respaldo por falta de modelo
+    # aprendido válido (ver auditoría 2026-07-27: si el archivo de pesos se
+    # pierde/corrompe, el bot vuelve en silencio a la heurística — esto lo
+    # hace visible en el reporte). Solo aplica a entradas BET/PASS, que son
+    # las únicas que llegan a calcular una probabilidad.
+    con_prob = [e for e in entries if e.get("action") in ("BET", "PASS")]
+    fallback = [e for e in con_prob if e.get("used_model") is False]
+
     return {
         "total":      total,
         "bets_up":    len(bets_up),
@@ -147,6 +155,8 @@ def analyze_btc(entries: list[dict]) -> dict:
         "avg_edge":   avg_edge,
         "total_bet":  total_bet,
         "top":        top,
+        "fallback":   len(fallback),
+        "con_prob":   len(con_prob),
     }
 
 
@@ -422,6 +432,14 @@ def build_report(summary: dict, all_entries: list[dict],
         "",
     ]
 
+    if btc_summary["fallback"] > 0:
+        lines += [
+            f"⚠️ **{btc_summary['fallback']} de {btc_summary['con_prob']} ciclos usaron la heurística "
+            f"de respaldo** (sin modelo aprendido válido) en vez de `bot2_weights.json` — revisar si el "
+            f"archivo de pesos existe y es válido en el repo.",
+            "",
+        ]
+
     if btc_summary["top"]:
         lines += [
             "#### 🎯 Mejores apuestas del día",
@@ -465,6 +483,14 @@ def build_report(summary: dict, all_entries: list[dict],
         f"| Total histórico en log | {total_all_scalp} |",
         "",
     ]
+
+    if scalp_summary["fallback"] > 0:
+        lines += [
+            f"⚠️ **{scalp_summary['fallback']} de {scalp_summary['con_prob']} ciclos usaron la heurística "
+            f"de respaldo** (sin modelo aprendido válido) en vez de `bot3_weights.json` — revisar si el "
+            f"archivo de pesos existe y es válido en el repo.",
+            "",
+        ]
 
     if scalp_summary["top"]:
         lines += [
@@ -678,6 +704,13 @@ def build_email_html(summary: dict, all_entries: list[dict],
         ]),
     ]
 
+    if btc_summary["fallback"] > 0:
+        parts.append(
+            f"<p style='color:#c62828'>⚠️ <b>{btc_summary['fallback']} de {btc_summary['con_prob']} "
+            f"ciclos usaron la heurística de respaldo</b> (sin modelo aprendido válido) en vez de "
+            f"<code>bot2_weights.json</code> — revisar si el archivo de pesos existe y es válido en el repo.</p>"
+        )
+
     if btc_summary["top"]:
         parts.append("<h4>🎯 Mejores apuestas del día</h4><ul>")
         for s in btc_summary["top"]:
@@ -706,6 +739,13 @@ def build_email_html(summary: dict, all_entries: list[dict],
             ("Total histórico en log", str(len(all_scalp_entries))),
         ]),
     ]
+
+    if scalp_summary["fallback"] > 0:
+        parts.append(
+            f"<p style='color:#c62828'>⚠️ <b>{scalp_summary['fallback']} de {scalp_summary['con_prob']} "
+            f"ciclos usaron la heurística de respaldo</b> (sin modelo aprendido válido) en vez de "
+            f"<code>bot3_weights.json</code> — revisar si el archivo de pesos existe y es válido en el repo.</p>"
+        )
 
     if scalp_summary["top"]:
         parts.append("<h4>🎯 Mejores apuestas del día</h4><ul>")

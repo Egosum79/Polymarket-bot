@@ -169,26 +169,38 @@ def _predict_learned(analysis: dict, weights_path: str = WEIGHTS_FILE) -> float 
         return None
 
 
-def our_probability_scalp(analysis: dict) -> float:
+def our_probability_scalp(analysis: dict) -> tuple[float, bool]:
     """
     Estima la probabilidad de que BTC termine arriba al cierre de la ventana.
     Usa el modelo reajustado con datos reales si ya existe (ver
     retrain_model.py); si no, cae en la heurística fija de siempre: base
-    50% + RSI de corto plazo (contrarian) + cruce EMA rápido (tendencia)
-    + momentum ya recorrido dentro de la ventana (continuación — ver aviso
-    de hipótesis sin validar en el docstring del módulo).
+    50% + RSI de tendencia (ver aviso más abajo, corregido 2026-07-28)
+    + cruce EMA rápido (tendencia) + momentum ya recorrido dentro de la
+    ventana (continuación — ver aviso de hipótesis sin validar en el
+    docstring del módulo).
+
+    Retorna (probabilidad, used_model) — used_model=False significa que
+    cayó al fallback de la heurística (sin bot3_weights.json, o con un
+    archivo inválido). Ver aviso de fragilidad en la auditoría 2026-07-27:
+    si el archivo de pesos se pierde/corrompe sin que nadie se entere, el
+    bot vuelve en silencio a la heurística — esto hace visible ese cambio.
     """
     learned = _predict_learned(analysis)
     if learned is not None:
-        return learned
+        return learned, True
 
     base = 0.50
 
+    # RSI de tendencia (NO contrarian): la auditoría 2026-07-27 encontró que a
+    # esta escala de 1 minuto el RSI alto predice CONTINUACIÓN de la subida
+    # (no reversión) — probado con datos reales: la regla "RSI>50 → sube"
+    # acierta 62.8% contra 31.2% de la regla contrarian original que había
+    # aquí antes. Se invirtió el signo manteniendo los mismos umbrales.
     rsi_val = analysis["rsi"]
-    if rsi_val < 25:      base += 0.08
-    elif rsi_val < 35:    base += 0.04
-    elif rsi_val > 75:    base -= 0.08
-    elif rsi_val > 65:    base -= 0.04
+    if rsi_val < 25:      base -= 0.08
+    elif rsi_val < 35:    base -= 0.04
+    elif rsi_val > 75:    base += 0.08
+    elif rsi_val > 65:    base += 0.04
 
     if analysis["ema_diff"] > 0:
         base += 0.03
@@ -202,7 +214,7 @@ def our_probability_scalp(analysis: dict) -> float:
         # un movimiento que podría revertir en lo que queda de ventana.
         base += max(-0.15, min(0.15, wm * 0.5))
 
-    return round(max(0.10, min(0.90, base)), 4)
+    return round(max(0.10, min(0.90, base)), 4), False
 
 
 # ─────────────────────────────────────────────────────
@@ -285,10 +297,13 @@ def run_cycle() -> dict:
     else:
         print(f"     Momentum ventana:  sin dato (no se pudo ubicar la vela de apertura)")
 
-    our_prob_up = our_probability_scalp(analysis)
+    our_prob_up, used_model = our_probability_scalp(analysis)
     market_prob_up = get_market_probability(market, "UP")
     print(f"\n  🧮 Nuestra probabilidad de UP: {our_prob_up*100:.1f}%")
     print(f"     Precio mercado (UP): {market_prob_up*100:.1f}¢")
+    if not used_model:
+        print(f"  ⚠️  Sin modelo aprendido disponible ({WEIGHTS_FILE} no existe o no es válido) "
+              f"— usando heurística de respaldo", file=sys.stderr)
 
     edge_up = our_prob_up - market_prob_up
     if edge_up >= 0:
@@ -319,6 +334,7 @@ def run_cycle() -> dict:
         "window_momentum": analysis["window_momentum"],
         "market_id":       market_id,
         "market_q":        market.get("question", "")[:80],
+        "used_model":      used_model,
     }
     log_entry(entry)
     return entry

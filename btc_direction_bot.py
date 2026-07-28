@@ -405,16 +405,22 @@ def _predict_learned(analysis: dict, weights_path: str = WEIGHTS_FILE) -> float 
         return None
 
 
-def our_probability(analysis: dict) -> float:
+def our_probability(analysis: dict) -> tuple[float, bool]:
     """
     Estima nuestra probabilidad de que BTC suba en la próxima hora.
     Usa el modelo reajustado con datos reales si ya existe (ver
     retrain_model.py); si no, cae en la heurística fija de siempre:
     base 50% (mercado eficiente) + ajustes por indicadores.
+
+    Retorna (probabilidad, used_model) — used_model=False significa que
+    cayó al fallback de la heurística (sin bot2_weights.json, o con un
+    archivo inválido). Ver aviso de fragilidad en la auditoría 2026-07-27:
+    si el archivo de pesos se pierde/corrompe sin que nadie se entere, el
+    bot vuelve en silencio a la heurística — esto hace visible ese cambio.
     """
     learned = _predict_learned(analysis)
     if learned is not None:
-        return learned
+        return learned, True
 
     base = 0.50
 
@@ -452,7 +458,7 @@ def our_probability(analysis: dict) -> float:
     if mom > 0.5:    base += 0.03
     elif mom < -0.5: base -= 0.03
 
-    return round(max(0.15, min(0.85, base)), 4)
+    return round(max(0.15, min(0.85, base)), 4), False
 
 
 # ─────────────────────────────────────────────────────
@@ -547,9 +553,12 @@ def run_cycle() -> dict:
     # 4. Calcular probabilidad de UP (our_probability siempre devuelve P(sube),
     #    nunca P(bet_side) — hay que compararla contra el precio de mercado
     #    de UP y recién ahí decidir a qué lado le conviene apostar).
-    our_prob_up = our_probability(analysis)
+    our_prob_up, used_model = our_probability(analysis)
     print(f"\n  🧮 Nuestra probabilidad de UP: {our_prob_up*100:.1f}%  "
           f"(señal técnica: {analysis['direction']})")
+    if not used_model:
+        print(f"  ⚠️  Sin modelo aprendido disponible ({WEIGHTS_FILE} no existe o no es válido) "
+              f"— usando heurística de respaldo", file=sys.stderr)
 
     # 5. Buscar mercado activo en Polymarket
     market = find_btc_window_market()
@@ -597,6 +606,7 @@ def run_cycle() -> dict:
         "momentum_1h":  analysis["momentum_1h"],
         "market_id":    market.get("id") if market else None,
         "market_q":     market.get("question","")[:80] if market else None,
+        "used_model":   used_model,
     }
     log_entry(entry)
     return entry
