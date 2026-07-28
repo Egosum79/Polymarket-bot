@@ -1321,3 +1321,4 @@
 {"timestamp": "2026-07-28T06:55:11.065688+00:00", "action": "PASS", "bet_side": null, "bet_usd": 0, "our_prob": 0.17259999999999998, "market_prob": 0.07499999999999996, "edge": 0.0976, "btc_price": 63641.44, "rsi": 74.17, "ema_diff": 29.14, "window_momentum": 0.0903, "market_id": "3124288", "market_q": "Bitcoin Up or Down - July 28, 2:45AM-3:00AM ET"}
 {"timestamp": "2026-07-28T07:00:19.893464+00:00", "action": "BET", "bet_side": "UP", "bet_usd": 10.0, "our_prob": 0.6111, "market_prob": 0.505, "edge": 0.1061, "btc_price": 63648.01, "rsi": 75.03, "ema_diff": 22.34, "window_momentum": 0.022, "market_id": "3124326", "market_q": "Bitcoin Up or Down - July 28, 3:00AM-3:15AM ET"}
 {"timestamp": "2026-07-28T07:05:17.201016+00:00", "action": "SKIP", "reason": "YA_APOSTADO", "market_id": "3124326"}
+{"timestamp": "2026-07-28T07:10:13.524692+00:00", "action": "SKIP", "reason": "YA_APOSTADO", "market_id": "3124326"}
