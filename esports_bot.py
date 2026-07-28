@@ -29,7 +29,7 @@ GAMMA_MARKETS_URL = (
     "https://gamma-api.polymarket.com/markets"
     "?limit=200&active=true&closed=false&order=volume24hr&ascending=false"
 )
-PANDASCORE_MATCHES_URL = "https://api.pandascore.io/matches"
+PANDASCORE_MATCHES_URL = "https://api.pandascore.co/matches"   # OJO: es .co, no .io (ver diagnostico 2026-07-28)
 
 LOG_FILE = "esports_bot_log.jsonl"
 
