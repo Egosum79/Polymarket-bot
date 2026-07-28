@@ -74,8 +74,14 @@ if hasattr(sys.stdout, "reconfigure"):
 # ─────────────────────────────────────────────────────
 
 CANDLES_1M   = 30          # velas de 1 minuto para RSI/EMA de corto plazo
-EDGE_MINIMO  = 0.10        # ventaja mínima para apostar (10% — más exigente que
-                           # btc_direction_bot.py porque la señal es más ruidosa)
+EDGE_MINIMO  = 0.20        # ventaja mínima para apostar. Subido de 10% a 20% tras
+                           # la auditoría 2026-07-28: con datos reales, el grupo de
+                           # apuestas con edge 10-15% perdía dinero (-$86.88, 37.8%
+                           # de acierto contra un precio promedio que exigía ~44%
+                           # para empatar), mientras que el grupo >25% de edge era
+                           # el único rentable. 20% es un punto intermedio deliberadamente
+                           # conservador -- corta la banda que ya se probó perdedora,
+                           # sin exigir tanto como el >25% que casi no tiene muestra (n=15).
 APUESTA_USD  = 10.0        # tamaño fijo de apuesta en simulación
 LOG_FILE     = "btc_scalp_log.jsonl"
 
