@@ -265,6 +265,21 @@ def fetch_pandascore_matches(team_name):
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
     data = fetch_json(url, headers=headers)
+
+    # DIAGNOSTICO TEMPORAL (2026-07-28): el bot nunca encuentra datos para
+    # ningun equipo y fetch_json no imprime nada en el caso "200 pero vacio",
+    # asi que no hay forma de saber si falta la API key, si PandaScore
+    # devuelve una lista vacia, o un cuerpo de error no-lista. Quitar estas
+    # lineas una vez confirmada la causa real.
+    if not api_key:
+        print(f"  [DIAG] PANDASCORE_API_KEY no esta configurada (llamando sin autenticacion)", file=sys.stderr)
+    if data is None:
+        print(f"  [DIAG] '{team_name}': fetch_json devolvio None (ver [HTTP]/[URLError]/[Error] arriba)", file=sys.stderr)
+    elif isinstance(data, list):
+        print(f"  [DIAG] '{team_name}': respuesta lista con {len(data)} elemento(s)", file=sys.stderr)
+    else:
+        print(f"  [DIAG] '{team_name}': respuesta NO es una lista (tipo={type(data).__name__}): {str(data)[:300]}", file=sys.stderr)
+
     if not data or not isinstance(data, list) or len(data) == 0:
         return None
     return data
