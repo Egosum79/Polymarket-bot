@@ -33,20 +33,39 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add esports_bot_log.jsonl
-          if git diff --cached --quiet; then
+
+          # Capturar SOLO las lineas nuevas que este ciclo agrego, antes de
+          # tocar nada de git. Con varios workflows compitiendo por el mismo
+          # repo, "commit + rebase + reintento" puede toparse con un
+          # CONFLICT (content) real en un archivo corto que se actualiza
+          # seguido -- eso NO se resuelve reintentando el mismo commit (y
+          # ademas el patron anterior repetia "git commit" en cada intento,
+          # que falla en cuanto ya no hay nada nuevo staged). En cada
+          # intento se parte de la base mas reciente y se reaplican estas
+          # lineas limpias encima, asi nunca hay que reconciliar dos
+          # versiones divergentes del archivo.
+          NEW_CONTENT=$(git diff -- esports_bot_log.jsonl | grep '^+' | grep -v '^+++' | sed 's/^+//')
+
+          if [ -z "$NEW_CONTENT" ]; then
             echo "Sin cambios en el log, nada que commitear."
             exit 0
           fi
-          for i in 1 2 3 4 5; do
-            git commit -m "esports_bot: log ciclo $(date -u +%Y-%m-%dT%H:%M:%SZ)" && \
-            git fetch origin && \
-            git rebase origin/main && \
-            git push origin HEAD:main && break
-            echo "Intento $i fallo, reintentando..."
-            sleep 5
-            if [ "$i" = "5" ]; then
-              echo "Fallaron los 5 intentos de push."
-              exit 1
+
+          pushed=0
+          for i in 1 2 3 4 5 6 7 8; do
+            git fetch origin main
+            git reset --hard origin/main
+            printf '%s\n' "$NEW_CONTENT" >> esports_bot_log.jsonl
+            git add esports_bot_log.jsonl
+            git commit -m "esports_bot: log ciclo $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            if git push origin HEAD:main; then
+              pushed=1
+              break
             fi
+            echo "Push rechazado (intento $i), reintentando..."
+            sleep $((RANDOM % 5 + 1))
           done
+          if [ "$pushed" -ne 1 ]; then
+            echo "::error::No se pudo pushear esports_bot_log.jsonl tras 8 intentos"
+            exit 1
+          fi
