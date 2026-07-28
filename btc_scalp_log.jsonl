@@ -1508,3 +1508,4 @@
 {"timestamp": "2026-07-28T22:15:13.885553+00:00", "action": "NO_MARKET"}
 {"timestamp": "2026-07-28T22:20:13.398981+00:00", "action": "NO_MARKET"}
 {"timestamp": "2026-07-28T22:25:16.574821+00:00", "action": "BET", "bet_side": "UP", "bet_usd": 10.0, "our_prob": 0.3873, "market_prob": 0.145, "edge": 0.2423, "btc_price": 63952.0, "rsi": 35.26, "ema_diff": -14.63, "window_momentum": -0.0359, "market_id": "3135476", "market_q": "Bitcoin Up or Down - July 28, 6:15PM-6:30PM ET", "used_model": true}
+{"timestamp": "2026-07-28T22:30:20.759649+00:00", "action": "NO_MARKET"}
