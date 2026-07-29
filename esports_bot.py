@@ -617,6 +617,24 @@ def diagnosticar_acceso_base_pandascore():
         print("  [DIAG-BASE] la cuenta si tiene acceso a datos de equipos; "
               "el problema esta especificamente en el filtro search[name]", file=sys.stderr)
 
+        # Prueba definitiva: buscar por nombre un equipo que SABEMOS que
+        # existe (el que acabamos de recibir sin filtro). Si esto tambien
+        # da 0, confirma que search[name] esta roto en si mismo, no que
+        # falten equipos especificos.
+        nombre_conocido = data[0].get("name") or ""
+        pedazo = nombre_conocido.split(" ")[0] if nombre_conocido else ""
+        if pedazo:
+            query2 = urllib.parse.urlencode({"search[name]": pedazo, "per_page": 5})
+            url2 = f"https://api.pandascore.co/lol/teams?{query2}"
+            data2 = fetch_json(url2, headers=headers)
+            if isinstance(data2, list) and len(data2) > 0:
+                print(f"  [DIAG-BASE] search[name]='{pedazo}' (equipo conocido) SI funciona -> "
+                      f"{[t.get('name') for t in data2]} -- el filtro search[name] funciona bien en general", file=sys.stderr)
+            else:
+                print(f"  [DIAG-BASE] search[name]='{pedazo}' (substring de un equipo QUE SABEMOS EXISTE, "
+                      f"'{nombre_conocido}') da 0 -> CONFIRMADO: el filtro search[name] esta roto o mal "
+                      f"formado en esta cuenta/endpoint, no es que falten los equipos", file=sys.stderr)
+
 
 def ejecutar_ciclo(modo_real):
     ahora_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
