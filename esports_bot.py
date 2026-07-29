@@ -588,9 +588,41 @@ def registrar(entry):
 # Ciclo principal
 # ----------------------------------------------------------------------
 
+def diagnosticar_acceso_base_pandascore():
+    """
+    DIAGNOSTICO TEMPORAL (2026-07-29 v4): pide /lol/teams SIN ningun filtro
+    de busqueda (solo per_page=3) para ver si la cuenta puede ver datos de
+    equipos en absoluto. Si esto tambien da 0 (con token recien actualizado
+    y confirmado activo en el dashboard), descarta cualquier problema de
+    como se arma "search[name]" y confirma que la cuenta/plan no tiene
+    acceso a datos de equipos, punto. Se corre una sola vez por ciclo.
+    Quitar una vez confirmada la causa real.
+    """
+    headers = {"User-Agent": "esports_bot/1.0"}
+    api_key = os.environ.get("PANDASCORE_API_KEY")
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+    url = "https://api.pandascore.co/lol/teams?per_page=3"
+    data = fetch_json(url, headers=headers)
+    if data is None:
+        print("  [DIAG-BASE] /lol/teams SIN filtro: fetch_json devolvio None", file=sys.stderr)
+    elif not isinstance(data, list):
+        print(f"  [DIAG-BASE] /lol/teams SIN filtro: respuesta NO es lista (tipo={type(data).__name__}): {str(data)[:300]}", file=sys.stderr)
+    elif len(data) == 0:
+        print("  [DIAG-BASE] /lol/teams SIN filtro (ningun search[name]) tambien da 0 -> "
+              "la cuenta/plan no tiene acceso a datos de equipos, no es un problema de busqueda", file=sys.stderr)
+    else:
+        resumen = [{"id": t.get("id"), "name": t.get("name")} for t in data]
+        print(f"  [DIAG-BASE] /lol/teams SIN filtro SI trae {len(data)} equipo(s) -> {resumen}", file=sys.stderr)
+        print("  [DIAG-BASE] la cuenta si tiene acceso a datos de equipos; "
+              "el problema esta especificamente en el filtro search[name]", file=sys.stderr)
+
+
 def ejecutar_ciclo(modo_real):
     ahora_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     print(f"=== esports_bot.py :: ciclo {ahora_iso} ===")
+
+    diagnosticar_acceso_base_pandascore()
 
     mercados = fetch_esports_markets()
     print(f"Mercados de esports encontrados: {len(mercados)}")
