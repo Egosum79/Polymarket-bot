@@ -27,8 +27,10 @@ from datetime import datetime, timedelta, timezone
 
 GAMMA_MARKETS_URL = (
     "https://gamma-api.polymarket.com/markets"
-    "?limit=200&active=true&closed=false&order=volume24hr&ascending=false"
+    "?limit=100&active=true&closed=false&order=volume24hr&ascending=false"
 )
+GAMMA_PAGE_SIZE = 100  # la API ignora limit>100 y siempre trunca a 100 por pagina
+GAMMA_MAX_PAGES = 5    # hasta 500 mercados; suficiente para no perder esports de bajo volumen
 PANDASCORE_MATCHES_URL = "https://api.pandascore.co/matches"   # OJO: es .co, no .io (ver diagnostico 2026-07-28)
 
 LOG_FILE = "esports_bot_log.jsonl"
@@ -38,7 +40,7 @@ BET_USD = 8.0
 MIN_LIQUIDITY = 5000.0
 MIN_PRICE = 0.10
 MAX_PRICE = 0.90
-HORAS_MAX_RESOLUCION = 6
+HORAS_MAX_RESOLUCION = 24  # antes 6: excluia LCK/LPL, que abren mercado ~10-14h antes
 
 REQUEST_TIMEOUT = 15
 
@@ -157,10 +159,34 @@ def detectar_juego(question_lower, tags_text):
     return "Esports"
 
 
+def fetch_todos_los_mercados():
+    """
+    Descarga mercados activos de Gamma API paginando con offset.
+
+    La API ignora silenciosamente limit>100 y siempre trunca a 100 items
+    por respuesta (confirmado 2026-07-29: pedir limit=200 o limit=500 igual
+    devuelve 100). Sin paginacion, cualquier mercado de esports fuera de los
+    100 de mayor volumen 24h -- asi sea de una liga de primer nivel -- nunca
+    se llega a evaluar. Pagina hasta GAMMA_MAX_PAGES paginas o hasta que la
+    API devuelva menos de una pagina completa (fin de resultados).
+    """
+    todos = []
+    for pagina in range(GAMMA_MAX_PAGES):
+        offset = pagina * GAMMA_PAGE_SIZE
+        url = f"{GAMMA_MARKETS_URL}&offset={offset}"
+        data = fetch_json(url)
+        if not data or not isinstance(data, list):
+            break
+        todos.extend(data)
+        if len(data) < GAMMA_PAGE_SIZE:
+            break
+    return todos
+
+
 def fetch_esports_markets():
     """Descarga mercados activos de Gamma API y filtra los de esports validos."""
-    data = fetch_json(GAMMA_MARKETS_URL)
-    if not data or not isinstance(data, list):
+    data = fetch_todos_los_mercados()
+    if not data:
         return []
 
     ahora = datetime.now(timezone.utc)
@@ -183,6 +209,11 @@ def fetch_esports_markets():
             try:
                 end_date = datetime.fromisoformat(end_date_raw.replace("Z", "+00:00"))
             except ValueError:
+                continue
+            # Excluir mercados "zombie": endDate ya paso pero Polymarket
+            # todavia no lo marco closed=true (visto 2026-07-29 con
+            # "Map Winner" de CS2 con horas_restantes negativas).
+            if end_date <= ahora:
                 continue
             if end_date > limite_resolucion:
                 continue
