@@ -256,6 +256,42 @@ def extraer_equipos(question):
 # Estadisticas via PandaScore
 # ----------------------------------------------------------------------
 
+PANDASCORE_TEAMS_URL = "https://api.pandascore.co/teams"
+
+
+def diagnosticar_equipo_en_pandascore(team_name, headers):
+    """
+    DIAGNOSTICO TEMPORAL (2026-07-28 v2): cuando /matches?search[name]=equipo
+    da 0 resultados, esto puede ser porque el equipo no esta en la base de
+    PandaScore, o porque "search[name]" en /matches filtra sobre el NOMBRE
+    DEL PARTIDO (ej. "Quarterfinal 1"), no sobre el nombre del equipo -- en
+    cuyo caso ninguna busqueda por equipo funcionaria nunca ahi, sin importar
+    el nivel de la liga. Este chequeo consulta /teams (que si deberia buscar
+    por nombre de equipo) para diferenciar ambos casos. Quitar una vez
+    confirmada la causa real.
+    """
+    query = urllib.parse.urlencode({"search[name]": team_name, "per_page": 5})
+    url = f"{PANDASCORE_TEAMS_URL}?{query}"
+    data = fetch_json(url, headers=headers)
+    if data is None:
+        print(f"  [DIAG-TEAMS] '{team_name}': fetch_json devolvio None en /teams", file=sys.stderr)
+        return
+    if not isinstance(data, list):
+        print(f"  [DIAG-TEAMS] '{team_name}': /teams respuesta NO es lista (tipo={type(data).__name__}): {str(data)[:300]}", file=sys.stderr)
+        return
+    if len(data) == 0:
+        print(f"  [DIAG-TEAMS] '{team_name}': /teams tampoco encuentra el equipo (0 resultados) -> probablemente no esta en la base de PandaScore", file=sys.stderr)
+        return
+    resumen = [
+        {"id": t.get("id"), "name": t.get("name"), "slug": t.get("slug"),
+         "videogame": (t.get("current_videogame") or {}).get("slug") if isinstance(t.get("current_videogame"), dict) else None}
+        for t in data
+    ]
+    print(f"  [DIAG-TEAMS] '{team_name}': /teams SI encuentra {len(data)} equipo(s) -> {resumen}", file=sys.stderr)
+    print(f"  [DIAG-TEAMS] '{team_name}': esto confirma que el equipo existe en PandaScore; "
+          f"el problema esta en como /matches?search[name] filtra, no en falta de datos", file=sys.stderr)
+
+
 def fetch_pandascore_matches(team_name):
     """Busca partidos recientes/proximos de un equipo. None si falla o vacio."""
     query = urllib.parse.urlencode({"search[name]": team_name, "per_page": 20})
@@ -281,6 +317,7 @@ def fetch_pandascore_matches(team_name):
         print(f"  [DIAG] '{team_name}': respuesta NO es una lista (tipo={type(data).__name__}): {str(data)[:300]}", file=sys.stderr)
 
     if not data or not isinstance(data, list) or len(data) == 0:
+        diagnosticar_equipo_en_pandascore(team_name, headers)
         return None
     return data
 
