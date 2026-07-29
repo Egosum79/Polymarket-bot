@@ -265,8 +265,16 @@ _SUFIJOS_RUIDO = re.compile(
     re.IGNORECASE,
 )
 
+# Prefijo tipo "LoL: ", "Counter-Strike: ", "Dota 2: " que Polymarket antepone
+# al primer equipo en la pregunta. Sin quitarlo, PandaScore recibe "LoL: T1"
+# en vez de "T1" y nunca encuentra el equipo (causa raiz confirmada 2026-07-29
+# via diagnostico: search[name] funciona bien, solo que se le pasaba el
+# nombre equivocado).
+_PREFIJO_JUEGO = re.compile(r"^[^:]{1,20}:\s*")
+
 
 def _limpiar_nombre_equipo(nombre):
+    nombre = _PREFIJO_JUEGO.sub("", nombre, count=1)
     nombre = _SUFIJOS_RUIDO.sub("", nombre)
     return nombre.strip(" .,-")
 
@@ -287,75 +295,7 @@ def extraer_equipos(question):
 # Estadisticas via PandaScore
 # ----------------------------------------------------------------------
 
-PANDASCORE_TEAMS_URL = "https://api.pandascore.co/teams"
-
-
-# Mapeo del nombre de juego que usa el bot (ver KEYWORDS_GAME) al slug de
-# videojuego que usa PandaScore en sus endpoints por juego (/lol/teams,
-# /csgo/teams, etc). None = sin endpoint por juego conocido para probar.
-PANDASCORE_GAME_SLUG = {
-    "League of Legends": "lol",
-    "Dota 2": "dota2",
-    "CS2": "csgo",
-    "Valorant": "valorant",
-}
-
-
-def diagnosticar_equipo_en_pandascore(team_name, headers, game=None):
-    """
-    DIAGNOSTICO TEMPORAL (2026-07-28 v2, 2026-07-29 v3): cuando
-    /matches?search[name]=equipo da 0 resultados, esto puede ser porque el
-    equipo no esta en la base de PandaScore, porque "search[name]" en
-    /matches filtra sobre el NOMBRE DEL PARTIDO (no del equipo), o porque el
-    endpoint generico /teams no cubre bien datos por-juego (PandaScore separa
-    mucho por videojuego). v3 agrega un segundo chequeo contra el endpoint
-    especifico del juego (ej. /lol/teams) cuando el generico /teams tambien
-    da 0, ya que /teams generico dio 0 incluso para 'T1' en la corrida del
-    2026-07-29, lo cual descarta la hipotesis original de v2. Quitar una vez
-    confirmada la causa real.
-    """
-    query = urllib.parse.urlencode({"search[name]": team_name, "per_page": 5})
-    url = f"{PANDASCORE_TEAMS_URL}?{query}"
-    data = fetch_json(url, headers=headers)
-    if data is None:
-        print(f"  [DIAG-TEAMS] '{team_name}': fetch_json devolvio None en /teams", file=sys.stderr)
-    elif not isinstance(data, list):
-        print(f"  [DIAG-TEAMS] '{team_name}': /teams respuesta NO es lista (tipo={type(data).__name__}): {str(data)[:300]}", file=sys.stderr)
-    elif len(data) == 0:
-        print(f"  [DIAG-TEAMS] '{team_name}': /teams (generico) da 0 resultados", file=sys.stderr)
-    else:
-        resumen = [
-            {"id": t.get("id"), "name": t.get("name"), "slug": t.get("slug"),
-             "videogame": (t.get("current_videogame") or {}).get("slug") if isinstance(t.get("current_videogame"), dict) else None}
-            for t in data
-        ]
-        print(f"  [DIAG-TEAMS] '{team_name}': /teams SI encuentra {len(data)} equipo(s) -> {resumen}", file=sys.stderr)
-        print(f"  [DIAG-TEAMS] '{team_name}': esto confirma que el equipo existe en PandaScore; "
-              f"el problema esta en como /matches?search[name] filtra, no en falta de datos", file=sys.stderr)
-        return
-
-    slug = PANDASCORE_GAME_SLUG.get(game)
-    if not slug:
-        print(f"  [DIAG-GAME] '{team_name}': sin slug de juego conocido para '{game}', se omite chequeo por-juego", file=sys.stderr)
-        return
-
-    url_juego = f"https://api.pandascore.co/{slug}/teams?{query}"
-    data_juego = fetch_json(url_juego, headers=headers)
-    if data_juego is None:
-        print(f"  [DIAG-GAME] '{team_name}': fetch_json devolvio None en /{slug}/teams", file=sys.stderr)
-    elif not isinstance(data_juego, list):
-        print(f"  [DIAG-GAME] '{team_name}': /{slug}/teams respuesta NO es lista (tipo={type(data_juego).__name__}): {str(data_juego)[:300]}", file=sys.stderr)
-    elif len(data_juego) == 0:
-        print(f"  [DIAG-GAME] '{team_name}': /{slug}/teams (especifico del juego) TAMBIEN da 0 -> "
-              f"probablemente problema de alcance/plan de la API key, no de endpoint", file=sys.stderr)
-    else:
-        resumen = [{"id": t.get("id"), "name": t.get("name"), "slug": t.get("slug")} for t in data_juego]
-        print(f"  [DIAG-GAME] '{team_name}': /{slug}/teams SI encuentra {len(data_juego)} equipo(s) -> {resumen}", file=sys.stderr)
-        print(f"  [DIAG-GAME] '{team_name}': el endpoint generico /teams no sirve para este juego, "
-              f"hay que usar /{slug}/teams (y por extension /{slug}/matches) en el bot", file=sys.stderr)
-
-
-def fetch_pandascore_matches(team_name, game=None):
+def fetch_pandascore_matches(team_name):
     """Busca partidos recientes/proximos de un equipo. None si falla o vacio."""
     query = urllib.parse.urlencode({"search[name]": team_name, "per_page": 20})
     url = f"{PANDASCORE_MATCHES_URL}?{query}"
@@ -364,23 +304,7 @@ def fetch_pandascore_matches(team_name, game=None):
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
     data = fetch_json(url, headers=headers)
-
-    # DIAGNOSTICO TEMPORAL (2026-07-28): el bot nunca encuentra datos para
-    # ningun equipo y fetch_json no imprime nada en el caso "200 pero vacio",
-    # asi que no hay forma de saber si falta la API key, si PandaScore
-    # devuelve una lista vacia, o un cuerpo de error no-lista. Quitar estas
-    # lineas una vez confirmada la causa real.
-    if not api_key:
-        print(f"  [DIAG] PANDASCORE_API_KEY no esta configurada (llamando sin autenticacion)", file=sys.stderr)
-    if data is None:
-        print(f"  [DIAG] '{team_name}': fetch_json devolvio None (ver [HTTP]/[URLError]/[Error] arriba)", file=sys.stderr)
-    elif isinstance(data, list):
-        print(f"  [DIAG] '{team_name}': respuesta lista con {len(data)} elemento(s)", file=sys.stderr)
-    else:
-        print(f"  [DIAG] '{team_name}': respuesta NO es una lista (tipo={type(data).__name__}): {str(data)[:300]}", file=sys.stderr)
-
     if not data or not isinstance(data, list) or len(data) == 0:
-        diagnosticar_equipo_en_pandascore(team_name, headers, game=game)
         return None
     return data
 
@@ -475,13 +399,13 @@ def calcular_region(matches, team_name, team_b):
     return 0.5
 
 
-def calcular_probabilidad(team_a, team_b, game=None):
+def calcular_probabilidad(team_a, team_b):
     """
     Calcula nuestra probabilidad de victoria de team_a contra team_b.
     Devuelve (probabilidad, tiene_datos).
     Si PandaScore falla o no hay datos, cae a 50/50 y no calcula edge.
     """
-    matches_a = fetch_pandascore_matches(team_a, game=game)
+    matches_a = fetch_pandascore_matches(team_a)
     if not matches_a:
         return 0.5, False
 
@@ -588,59 +512,9 @@ def registrar(entry):
 # Ciclo principal
 # ----------------------------------------------------------------------
 
-def diagnosticar_acceso_base_pandascore():
-    """
-    DIAGNOSTICO TEMPORAL (2026-07-29 v4): pide /lol/teams SIN ningun filtro
-    de busqueda (solo per_page=3) para ver si la cuenta puede ver datos de
-    equipos en absoluto. Si esto tambien da 0 (con token recien actualizado
-    y confirmado activo en el dashboard), descarta cualquier problema de
-    como se arma "search[name]" y confirma que la cuenta/plan no tiene
-    acceso a datos de equipos, punto. Se corre una sola vez por ciclo.
-    Quitar una vez confirmada la causa real.
-    """
-    headers = {"User-Agent": "esports_bot/1.0"}
-    api_key = os.environ.get("PANDASCORE_API_KEY")
-    if api_key:
-        headers["Authorization"] = f"Bearer {api_key}"
-    url = "https://api.pandascore.co/lol/teams?per_page=3"
-    data = fetch_json(url, headers=headers)
-    if data is None:
-        print("  [DIAG-BASE] /lol/teams SIN filtro: fetch_json devolvio None", file=sys.stderr)
-    elif not isinstance(data, list):
-        print(f"  [DIAG-BASE] /lol/teams SIN filtro: respuesta NO es lista (tipo={type(data).__name__}): {str(data)[:300]}", file=sys.stderr)
-    elif len(data) == 0:
-        print("  [DIAG-BASE] /lol/teams SIN filtro (ningun search[name]) tambien da 0 -> "
-              "la cuenta/plan no tiene acceso a datos de equipos, no es un problema de busqueda", file=sys.stderr)
-    else:
-        resumen = [{"id": t.get("id"), "name": t.get("name")} for t in data]
-        print(f"  [DIAG-BASE] /lol/teams SIN filtro SI trae {len(data)} equipo(s) -> {resumen}", file=sys.stderr)
-        print("  [DIAG-BASE] la cuenta si tiene acceso a datos de equipos; "
-              "el problema esta especificamente en el filtro search[name]", file=sys.stderr)
-
-        # Prueba definitiva: buscar por nombre un equipo que SABEMOS que
-        # existe (el que acabamos de recibir sin filtro). Si esto tambien
-        # da 0, confirma que search[name] esta roto en si mismo, no que
-        # falten equipos especificos.
-        nombre_conocido = data[0].get("name") or ""
-        pedazo = nombre_conocido.split(" ")[0] if nombre_conocido else ""
-        if pedazo:
-            query2 = urllib.parse.urlencode({"search[name]": pedazo, "per_page": 5})
-            url2 = f"https://api.pandascore.co/lol/teams?{query2}"
-            data2 = fetch_json(url2, headers=headers)
-            if isinstance(data2, list) and len(data2) > 0:
-                print(f"  [DIAG-BASE] search[name]='{pedazo}' (equipo conocido) SI funciona -> "
-                      f"{[t.get('name') for t in data2]} -- el filtro search[name] funciona bien en general", file=sys.stderr)
-            else:
-                print(f"  [DIAG-BASE] search[name]='{pedazo}' (substring de un equipo QUE SABEMOS EXISTE, "
-                      f"'{nombre_conocido}') da 0 -> CONFIRMADO: el filtro search[name] esta roto o mal "
-                      f"formado en esta cuenta/endpoint, no es que falten los equipos", file=sys.stderr)
-
-
 def ejecutar_ciclo(modo_real):
     ahora_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     print(f"=== esports_bot.py :: ciclo {ahora_iso} ===")
-
-    diagnosticar_acceso_base_pandascore()
 
     mercados = fetch_esports_markets()
     print(f"Mercados de esports encontrados: {len(mercados)}")
@@ -673,7 +547,7 @@ def ejecutar_ciclo(modo_real):
             continue
         team_a, team_b = equipos
 
-        our_probability, tiene_datos = calcular_probabilidad(team_a, team_b, game=market["juego"])
+        our_probability, tiene_datos = calcular_probabilidad(team_a, team_b)
         action, side, edge = decidir(our_probability, market["yes_price"], tiene_datos)
 
         team_bet = None
