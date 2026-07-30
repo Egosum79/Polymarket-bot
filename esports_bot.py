@@ -20,6 +20,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 # ----------------------------------------------------------------------
 # Configuracion
@@ -508,6 +509,34 @@ def registrar(entry):
         f.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
 
+def cargar_log():
+    p = Path(LOG_FILE)
+    if not p.exists():
+        return []
+    entries = []
+    with open(p, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line:
+                try:
+                    entries.append(json.loads(line))
+                except Exception:
+                    pass
+    return entries
+
+
+def ya_aposto_en(market_id, entries):
+    """
+    Evita apilar mas de una apuesta sobre el mismo mercado. Cada ciclo de
+    30 min re-evalua todos los mercados dentro de la ventana de
+    HORAS_MAX_RESOLUCION, y sin este chequeo el mismo partido se apostaba
+    una y otra vez en cada ciclo (visto 2026-07-30: un solo partido
+    acumulo 23 apuestas identicas antes de resolver, multiplicando
+    cualquier acierto o error del modelo por esa cantidad de veces).
+    """
+    return any(e.get("market_id") == market_id and e.get("action") == "BET" for e in entries)
+
+
 # ----------------------------------------------------------------------
 # Ciclo principal
 # ----------------------------------------------------------------------
@@ -539,8 +568,14 @@ def ejecutar_ciclo(modo_real):
         print("No se encontraron mercados de esports que cumplan los filtros.")
         return
 
+    ya_registrados = cargar_log()
+
     resumen = []
     for market in mercados:
+        if ya_aposto_en(market["id"], ya_registrados):
+            print(f"  [SKIP] Ya hay una apuesta registrada en: {market['question']}")
+            continue
+
         equipos = extraer_equipos(market["question"])
         if not equipos:
             print(f"  [SKIP] No se pudieron extraer equipos de: {market['question']}")
