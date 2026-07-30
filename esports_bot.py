@@ -172,13 +172,26 @@ def fetch_todos_los_mercados():
     API devuelva menos de una pagina completa (fin de resultados).
     """
     todos = []
+    vistos = set()
     for pagina in range(GAMMA_MAX_PAGES):
         offset = pagina * GAMMA_PAGE_SIZE
         url = f"{GAMMA_MARKETS_URL}&offset={offset}"
         data = fetch_json(url)
         if not data or not isinstance(data, list):
             break
-        todos.extend(data)
+        for m in data:
+            mid = m.get("id")
+            # El orden es por volume24hr, que cambia en vivo entre pagina y
+            # pagina -- un mercado puede correrse de posicion y aparecer en
+            # dos paginas distintas del mismo ciclo (visto 2026-07-30: un
+            # mercado se apostó 2 veces en el mismo ciclo por esto). Sin
+            # este dedup, ambas copias pasaban el chequeo de "ya aposte
+            # aqui" porque ese chequeo solo mira el log ya guardado, no lo
+            # que se lleva evaluado en el propio ciclo.
+            if mid in vistos:
+                continue
+            vistos.add(mid)
+            todos.append(m)
         if len(data) < GAMMA_PAGE_SIZE:
             break
     return todos
