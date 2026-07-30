@@ -312,6 +312,75 @@ def _capital_table_md(label: str, c: dict) -> list[str]:
     ]
 
 
+def load_model_status(weights_path: str) -> dict | None:
+    """
+    Lee bot2_weights.json / bot3_weights.json (los escribe retrain_model.py)
+    y devuelve sus metadatos de calibración, o None si el archivo no existe
+    o no es válido. oos_accuracy es la precisión sobre datos que el modelo
+    NUNCA vio al ajustarse (holdout cronológico) — la que de verdad importa
+    para juzgar si el modelo predice algo real, a diferencia de
+    train_accuracy, que puede verse bien solo por memorizar el propio set.
+    """
+    try:
+        with open(weights_path, encoding="utf-8") as f:
+            data = json.load(f)
+        return {
+            "n_samples":      data.get("n_samples"),
+            "l2":             data.get("l2"),
+            "train_accuracy": data.get("train_accuracy"),
+            "oos_accuracy":   data.get("oos_accuracy"),
+            "trained_at":     data.get("trained_at"),
+        }
+    except (FileNotFoundError, json.JSONDecodeError, KeyError):
+        return None
+
+
+def _model_status_md(label: str, status: dict | None) -> list[str]:
+    if status is None:
+        return [
+            f"_{label}: sin archivo de pesos todavía (sigue con la heurística original)._",
+            "",
+        ]
+    oos = status.get("oos_accuracy")
+    oos_txt = f"{oos*100:.1f}%" if oos is not None else "sin holdout (muestra chica)"
+    return [
+        f"**{label}**",
+        "",
+        f"| Métrica | Valor |",
+        f"|---------|-------|",
+        f"| Muestras de entrenamiento | {status.get('n_samples','?')} |",
+        f"| Regularización (L2) | {status.get('l2','?')} |",
+        f"| Precisión en entrenamiento | {(status.get('train_accuracy') or 0)*100:.1f}% |",
+        f"| **Precisión fuera de muestra (holdout)** | **{oos_txt}** |",
+        f"| Último reentrenamiento | {(status.get('trained_at') or '')[:19]} UTC |",
+        "",
+        "_La precisión fuera de muestra es la que importa: mide qué tan bien predice "
+        "el modelo datos que nunca vio al ajustarse, no qué tan bien memorizó el propio "
+        "entrenamiento._",
+        "",
+    ]
+
+
+def _model_status_html(label: str, status: dict | None) -> str:
+    if status is None:
+        return (f"<p style='color:#888;font-size:13px;'>{label}: sin archivo de pesos "
+                f"todavía (sigue con la heurística original).</p>")
+    oos = status.get("oos_accuracy")
+    oos_txt = f"{oos*100:.1f}%" if oos is not None else "sin holdout (muestra chica)"
+    rows = "".join([
+        _table_row(["Muestras de entrenamiento", str(status.get("n_samples", "?"))]),
+        _table_row(["Regularización (L2)", str(status.get("l2", "?"))]),
+        _table_row(["Precisión en entrenamiento", f"{(status.get('train_accuracy') or 0)*100:.1f}%"]),
+        _table_row(["<b>Precisión fuera de muestra (holdout)</b>", f"<b>{oos_txt}</b>"]),
+        _table_row(["Último reentrenamiento", f"{(status.get('trained_at') or '')[:19]} UTC"]),
+    ])
+    return (f"<p><b>{label}</b></p>"
+            f"<table style='border-collapse:collapse;width:100%;'>{rows}</table>"
+            f"<p style='color:#888;font-size:12px;'>La precisión fuera de muestra mide qué tan bien "
+            f"predice el modelo datos que nunca vio al ajustarse, no qué tan bien memorizó el propio "
+            f"entrenamiento.</p>")
+
+
 def build_report(summary: dict, all_entries: list[dict],
                  btc_summary: dict, all_btc_entries: list[dict],
                  scalp_summary: dict, all_scalp_entries: list[dict],
@@ -432,6 +501,8 @@ def build_report(summary: dict, all_entries: list[dict],
         "",
     ]
 
+    lines += _model_status_md("Estado del modelo aprendido", load_model_status("bot2_weights.json"))
+
     if btc_summary["fallback"] > 0:
         lines += [
             f"⚠️ **{btc_summary['fallback']} de {btc_summary['con_prob']} ciclos usaron la heurística "
@@ -483,6 +554,8 @@ def build_report(summary: dict, all_entries: list[dict],
         f"| Total histórico en log | {total_all_scalp} |",
         "",
     ]
+
+    lines += _model_status_md("Estado del modelo aprendido", load_model_status("bot3_weights.json"))
 
     if scalp_summary["fallback"] > 0:
         lines += [
@@ -702,6 +775,7 @@ def build_email_html(summary: dict, all_entries: list[dict],
             ("Apuesta simulada total", f"${btc_summary['total_bet']:.2f}"),
             ("Total histórico en log", str(len(all_btc_entries))),
         ]),
+        _model_status_html("Estado del modelo aprendido", load_model_status("bot2_weights.json")),
     ]
 
     if btc_summary["fallback"] > 0:
@@ -738,6 +812,7 @@ def build_email_html(summary: dict, all_entries: list[dict],
             ("Apuesta simulada total", f"${scalp_summary['total_bet']:.2f}"),
             ("Total histórico en log", str(len(all_scalp_entries))),
         ]),
+        _model_status_html("Estado del modelo aprendido", load_model_status("bot3_weights.json")),
     ]
 
     if scalp_summary["fallback"] > 0:
