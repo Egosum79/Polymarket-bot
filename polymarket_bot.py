@@ -405,6 +405,35 @@ def log_signal(signal: dict, action: str, mode: str):
         f.write(json.dumps(entry) + "\n")
 
 
+def load_log() -> list[dict]:
+    p = Path(LOG_FILE)
+    if not p.exists():
+        return []
+    entries = []
+    with open(p, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line:
+                try:
+                    entries.append(json.loads(line))
+                except Exception:
+                    pass
+    return entries
+
+
+def already_bet_on(market_id, entries: list[dict]) -> bool:
+    """
+    Evita apilar mas de una apuesta sobre el mismo mercado. Este bot re-evalua
+    los mismos mercados de largo plazo en cada ciclo mientras siguen abiertos
+    (dias o semanas) -- sin este chequeo, un mismo mercado se re-apostaba en
+    cada ciclo hasta que resolvia (visto 2026-07-31: un solo mercado acumulo
+    109 apuestas identicas antes de resolver, multiplicando una sola
+    prediccion equivocada por esa cantidad de veces en vez de ser 109
+    señales independientes).
+    """
+    return any(e.get("market_id") == market_id for e in entries)
+
+
 # ─────────────────────────────────────────────────────
 # CICLO PRINCIPAL DEL BOT
 # ─────────────────────────────────────────────────────
@@ -433,9 +462,12 @@ def run_cycle(mode: str = "simulation") -> list[dict]:
     markets = get_btc_markets()
     print(f"  📊 Mercados BTC encontrados: {len(markets)}")
 
-    # 4. Analizar cada mercado
+    # 4. Analizar cada mercado (saltando los que ya tienen una apuesta registrada)
+    ya_registrados = load_log()
     signals = []
     for m in markets:
+        if already_bet_on(m.get("id"), ya_registrados):
+            continue
         result = analyze_btc_market(m, btc, mu, sigma)
         if result:
             signals.append(result)
