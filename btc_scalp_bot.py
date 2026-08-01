@@ -82,6 +82,17 @@ EDGE_MINIMO  = 0.20        # ventaja mínima para apostar. Subido de 10% a 20% t
                            # el único rentable. 20% es un punto intermedio deliberadamente
                            # conservador -- corta la banda que ya se probó perdedora,
                            # sin exigir tanto como el >25% que casi no tiene muestra (n=15).
+CONVICCION_MINIMA = 0.08   # nuestra propia P(UP) debe alejarse al menos esto de 50/50.
+                           # auditoría 2026-08-01: "edge" se calculaba como diferencia
+                           # bruta contra el precio de mercado, asi que un mercado muy
+                           # seguro (ej. 92.5%) disparaba un edge enorme frente a
+                           # CUALQUIER salida tibia del modelo (ej. 57%) -- el bot
+                           # terminaba apostando en contra de mercados muy confiados
+                           # con una señal propia casi indistinguible de una moneda al
+                           # aire (rango real visto: nunca mas alla de 39%-73%). De 49
+                           # apuestas asi en un solo dia, solo 3 ganaron. Este piso
+                           # exige que el modelo tenga convicción propia antes de
+                           # pelear contra un mercado extremo, no solo que discrepe.
 APUESTA_USD  = 10.0        # tamaño fijo de apuesta en simulación
 LOG_FILE     = "btc_scalp_log.jsonl"
 
@@ -317,11 +328,17 @@ def run_cycle() -> dict:
     else:
         bet_side, our_prob, market_prob, edge = "DOWN", 1 - our_prob_up, 1 - market_prob_up, -edge_up
 
-    print(f"     Edge ({bet_side}): {edge*100:.1f}%")
+    conviccion_propia = abs(our_prob_up - 0.5)
+    print(f"     Edge ({bet_side}): {edge*100:.1f}%  |  Convicción propia: {conviccion_propia*100:.1f}%")
 
-    if edge >= EDGE_MINIMO:
+    if edge >= EDGE_MINIMO and conviccion_propia >= CONVICCION_MINIMA:
         action = "BET"
         print(f"\n  ✅ APUESTA SIMULADA: {bet_side} ${APUESTA_USD:.2f}  (edge={edge*100:.1f}%)")
+    elif edge >= EDGE_MINIMO:
+        action = "PASS"
+        print(f"\n  ⚪ Edge suficiente ({edge*100:.1f}%) pero convicción propia insuficiente "
+              f"({conviccion_propia*100:.1f}% < {CONVICCION_MINIMA*100:.0f}%) — no se pelea contra "
+              f"un mercado más seguro que nosotros")
     else:
         action = "PASS"
         print(f"\n  ⚪ Edge insuficiente ({edge*100:.1f}% < {EDGE_MINIMO*100:.0f}%) — no se apuesta")
@@ -334,6 +351,7 @@ def run_cycle() -> dict:
         "our_prob":        our_prob,
         "market_prob":     market_prob,
         "edge":            round(edge, 4),
+        "conviccion_propia": round(conviccion_propia, 4),
         "btc_price":       current_price,
         "rsi":             analysis["rsi"],
         "ema_diff":        analysis["ema_diff"],

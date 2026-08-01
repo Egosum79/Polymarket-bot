@@ -71,6 +71,13 @@ INTERVAL      = "1h"
 CANDLES       = 50          # velas históricas para indicadores
 
 EDGE_MINIMO   = 0.06        # ventaja mínima para apostar (6%)
+CONVICCION_MINIMA = 0.08    # nuestra propia P(UP) debe alejarse al menos esto de 50/50.
+                            # auditoría 2026-08-01: con EDGE_MINIMO bajo (6%), cualquier
+                            # mercado seguro (ej. 92.5%) dispara edge suficiente frente a
+                            # una salida casi de moneda al aire del modelo -- el winrate
+                            # real terminó significativamente por debajo de 50% (37.6% en
+                            # 93 apuestas liquidadas, z=-2.38). Este piso exige convicción
+                            # propia real antes de pelear contra un mercado extremo.
 APUESTA_USD   = 10.0        # tamaño fijo de apuesta en simulación
 LOG_FILE      = "btc_bot_log.jsonl"
 
@@ -580,12 +587,18 @@ def run_cycle() -> dict:
     else:
         bet_side, our_prob, market_prob, edge = "DOWN", 1 - our_prob_up, 1 - market_prob_up, -edge_up
 
-    print(f"     Edge ({bet_side}): {edge*100:.1f}%")
+    conviccion_propia = abs(our_prob_up - 0.5)
+    print(f"     Edge ({bet_side}): {edge*100:.1f}%  |  Convicción propia: {conviccion_propia*100:.1f}%")
 
     # 7. Decisión de apuesta
-    if edge >= EDGE_MINIMO:
+    if edge >= EDGE_MINIMO and conviccion_propia >= CONVICCION_MINIMA:
         action = "BET"
         print(f"\n  ✅ APUESTA SIMULADA: {bet_side} ${APUESTA_USD:.2f}  (edge={edge*100:.1f}%)")
+    elif edge >= EDGE_MINIMO:
+        action = "PASS"
+        print(f"\n  ⚪ Edge suficiente ({edge*100:.1f}%) pero convicción propia insuficiente "
+              f"({conviccion_propia*100:.1f}% < {CONVICCION_MINIMA*100:.0f}%) — no se pelea contra "
+              f"un mercado más seguro que nosotros")
     else:
         action = "PASS"
         print(f"\n  ⚪ Edge insuficiente ({edge*100:.1f}% < {EDGE_MINIMO*100:.0f}%) — no se apuesta")
@@ -598,6 +611,7 @@ def run_cycle() -> dict:
         "our_prob":     our_prob,
         "market_prob":  market_prob,
         "edge":         round(edge, 4),
+        "conviccion_propia": round(conviccion_propia, 4),
         "btc_price":    btc,
         "rsi":          analysis["rsi"],
         "ema_signal":   analysis["ema_signal"],
