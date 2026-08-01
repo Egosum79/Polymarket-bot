@@ -2536,3 +2536,4 @@
 {"timestamp": "2026-08-01T10:47:21.755621+00:00", "action": "NO_MARKET"}
 {"timestamp": "2026-08-01T10:50:19.422693+00:00", "action": "NO_MARKET"}
 {"timestamp": "2026-08-01T10:57:37.461536+00:00", "action": "NO_MARKET"}
+{"timestamp": "2026-08-01T11:00:15.956068+00:00", "action": "PASS", "bet_side": null, "bet_usd": 0, "our_prob": 0.4991, "market_prob": 0.415, "edge": 0.0841, "btc_price": 63052.13, "rsi": 46.26, "ema_diff": 1.19, "window_momentum": 0.0024, "market_id": "3239300", "market_q": "Bitcoin Up or Down - August 1, 7:00AM-7:15AM ET", "used_model": true}
