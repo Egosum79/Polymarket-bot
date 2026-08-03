@@ -331,7 +331,29 @@ def run_cycle() -> dict:
     conviccion_propia = abs(our_prob_up - 0.5)
     print(f"     Edge ({bet_side}): {edge*100:.1f}%  |  Convicción propia: {conviccion_propia*100:.1f}%")
 
-    if edge >= EDGE_MINIMO and conviccion_propia >= CONVICCION_MINIMA:
+    # Veto por momentum: investigación 2026-08-03 sobre las 561 apuestas
+    # liquidadas hasta ahora mostró que apostar EN CONTRA del signo del
+    # momentum de la ventana ganaba solo 15.1% (312 apuestas, -$867.71),
+    # mientras que apostar A FAVOR (o con momentum neutro) rondaba breakeven
+    # o mejor (+$142.28 combinado). El modelo, comparado contra un mercado
+    # que ya incorpora ese mismo momentum con más fuerza, termina peleando
+    # sistemáticamente contra la señal individual más confiable que tiene.
+    # Simular este veto desde el inicio habría cambiado el PnL histórico de
+    # -$725.43 a +$142.28 -- es la causa dominante de las pérdidas del bot.
+    wm = analysis["window_momentum"]
+    momentum_direccion = None
+    if wm is not None:
+        if wm > 0.01:
+            momentum_direccion = "UP"
+        elif wm < -0.01:
+            momentum_direccion = "DOWN"
+    contra_momentum = momentum_direccion is not None and bet_side != momentum_direccion
+
+    if edge >= EDGE_MINIMO and conviccion_propia >= CONVICCION_MINIMA and contra_momentum:
+        action = "PASS"
+        print(f"\n  ⚪ Edge y convicción suficientes, pero {bet_side} va EN CONTRA del momentum de "
+              f"la ventana ({wm:+.3f}%) — vetada (históricamente esto ganaba solo 15%)")
+    elif edge >= EDGE_MINIMO and conviccion_propia >= CONVICCION_MINIMA:
         action = "BET"
         print(f"\n  ✅ APUESTA SIMULADA: {bet_side} ${APUESTA_USD:.2f}  (edge={edge*100:.1f}%)")
     elif edge >= EDGE_MINIMO:
@@ -352,6 +374,7 @@ def run_cycle() -> dict:
         "market_prob":     market_prob,
         "edge":            round(edge, 4),
         "conviccion_propia": round(conviccion_propia, 4),
+        "contra_momentum": contra_momentum,
         "btc_price":       current_price,
         "rsi":             analysis["rsi"],
         "ema_diff":        analysis["ema_diff"],
