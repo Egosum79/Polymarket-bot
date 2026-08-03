@@ -3232,3 +3232,4 @@
 {"timestamp": "2026-08-03T20:00:23.725685+00:00", "action": "BET", "bet_side": "DOWN", "bet_usd": 10.0, "our_prob": 0.6837, "market_prob": 0.46499999999999997, "edge": 0.2187, "conviccion_propia": 0.1837, "btc_price": 63869.95, "rsi": 36.55, "ema_diff": -28.07, "window_momentum": -0.057, "market_id": "3293512", "market_q": "Bitcoin Up or Down - August 3, 4:00PM-4:15PM ET", "used_model": true}
 {"timestamp": "2026-08-03T20:05:12.722600+00:00", "action": "SKIP", "reason": "YA_APOSTADO", "market_id": "3293512"}
 {"timestamp": "2026-08-03T20:10:21.923235+00:00", "action": "SKIP", "reason": "YA_APOSTADO", "market_id": "3293512"}
+{"timestamp": "2026-08-03T20:15:13.411301+00:00", "action": "NO_MARKET"}
