@@ -3814,3 +3814,4 @@
 {"timestamp": "2026-08-05T19:55:11.593006+00:00", "action": "NO_MARKET"}
 {"timestamp": "2026-08-05T20:00:27.963081+00:00", "action": "BET", "bet_side": "DOWN", "bet_usd": 10.0, "our_prob": 0.6729, "market_prob": 0.385, "edge": 0.2879, "conviccion_propia": 0.1729, "contra_momentum": false, "btc_price": 64860.0, "rsi": 44.5, "ema_diff": -16.9, "window_momentum": -0.0625, "market_id": "3346529", "market_q": "Bitcoin Up or Down - August 5, 4:00PM-4:15PM ET", "used_model": true}
 {"timestamp": "2026-08-05T20:05:13.506948+00:00", "action": "SKIP", "reason": "YA_APOSTADO", "market_id": "3346529"}
+{"timestamp": "2026-08-05T20:10:21.986144+00:00", "action": "SKIP", "reason": "YA_APOSTADO", "market_id": "3346529"}
