@@ -4809,3 +4809,4 @@
 {"timestamp": "2026-08-09T06:31:04.658473+00:00", "action": "SKIP", "reason": "YA_APOSTADO", "market_id": "3416330"}
 {"timestamp": "2026-08-09T06:35:11.610495+00:00", "action": "SKIP", "reason": "YA_APOSTADO", "market_id": "3416330"}
 {"timestamp": "2026-08-09T06:40:14.636536+00:00", "action": "PASS", "bet_side": null, "bet_usd": 0, "our_prob": 0.61, "market_prob": 0.475, "edge": 0.135, "conviccion_propia": 0.11, "contra_momentum": false, "btc_price": 64862.74, "rsi": 99.91, "ema_diff": 7.94, "window_momentum": null, "market_id": "3416434", "market_q": "Bitcoin Up or Down - August 9, 2:45AM-3:00AM ET", "used_model": false}
+{"timestamp": "2026-08-09T06:45:12.021217+00:00", "action": "NO_MARKET"}
