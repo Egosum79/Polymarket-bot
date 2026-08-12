@@ -71,13 +71,21 @@ INTERVAL      = "1h"
 CANDLES       = 50          # velas históricas para indicadores
 
 EDGE_MINIMO   = 0.06        # ventaja mínima para apostar (6%)
-CONVICCION_MINIMA = 0.08    # nuestra propia P(UP) debe alejarse al menos esto de 50/50.
+CONVICCION_MINIMA = 0.03    # nuestra propia P(UP) debe alejarse al menos esto de 50/50.
                             # auditoría 2026-08-01: con EDGE_MINIMO bajo (6%), cualquier
                             # mercado seguro (ej. 92.5%) dispara edge suficiente frente a
                             # una salida casi de moneda al aire del modelo -- el winrate
                             # real terminó significativamente por debajo de 50% (37.6% en
                             # 93 apuestas liquidadas, z=-2.38). Este piso exige convicción
                             # propia real antes de pelear contra un mercado extremo.
+                            # Bajado de 0.08 a 0.03 el 2026-08-10: ese umbral se copió del
+                            # calibrado para bot3 (donde la evidencia de la brecha era muy
+                            # grande), pero la convicción propia de bot2 rara vez pasa de
+                            # 0.05-0.06 -- con 0.08 bloqueaba 63 de 66 oportunidades con edge
+                            # suficiente desde que se activó (95%), dejando el bot casi sin
+                            # apostar. 0.03 sigue filtrando los casos de convicción casi nula
+                            # (la mayoria de las bloqueadas estaba por debajo de esto) sin
+                            # apagar el bot por completo.
 APUESTA_USD   = 10.0        # tamaño fijo de apuesta en simulación
 LOG_FILE      = "btc_bot_log.jsonl"
 
