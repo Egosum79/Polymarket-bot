@@ -7389,3 +7389,4 @@
 {"timestamp": "2026-08-17T21:40:13.138849+00:00", "action": "PASS", "bet_side": null, "bet_usd": 0, "our_prob": 0.5599000000000001, "market_prob": 0.395, "edge": 0.1649, "conviccion_propia": 0.0599, "contra_momentum": false, "btc_price": 64321.19, "rsi": 44.77, "ema_diff": -8.42, "window_momentum": -0.0174, "market_id": "3648119", "market_q": "Bitcoin Up or Down - August 17, 5:30PM-5:45PM ET", "used_model": true}
 {"timestamp": "2026-08-17T21:45:11.010147+00:00", "action": "NO_MARKET"}
 {"timestamp": "2026-08-17T21:50:11.902341+00:00", "action": "NO_MARKET"}
+{"timestamp": "2026-08-17T21:55:13.761017+00:00", "action": "NO_MARKET"}
