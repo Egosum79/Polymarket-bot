@@ -8788,3 +8788,4 @@
 {"timestamp": "2026-08-22T09:55:04.272546+00:00", "action": "NO_MARKET"}
 {"timestamp": "2026-08-22T09:55:10.485957+00:00", "action": "NO_MARKET"}
 {"timestamp": "2026-08-22T10:00:14.259039+00:00", "action": "PASS", "bet_side": null, "bet_usd": 0, "our_prob": 0.6566, "market_prob": 0.515, "edge": 0.1416, "conviccion_propia": 0.1566, "contra_momentum": false, "btc_price": 77081.12, "rsi": 51.76, "ema_diff": 9.04, "window_momentum": 0.0602, "market_id": "3759805", "market_q": "Bitcoin Up or Down - August 22, 6:00AM-6:15AM ET", "used_model": true}
+{"timestamp": "2026-08-22T10:05:10.886369+00:00", "action": "PASS", "bet_side": null, "bet_usd": 0, "our_prob": 0.8465, "market_prob": 0.8049999999999999, "edge": 0.0415, "conviccion_propia": 0.3465, "contra_momentum": false, "btc_price": 76904.0, "rsi": 49.51, "ema_diff": -45.23, "window_momentum": -0.1698, "market_id": "3759805", "market_q": "Bitcoin Up or Down - August 22, 6:00AM-6:15AM ET", "used_model": true}
