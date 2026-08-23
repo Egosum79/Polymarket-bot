@@ -577,14 +577,27 @@ def run_cycle() -> dict:
 
     # 5. Buscar mercado activo en Polymarket
     market = find_btc_window_market()
-    if market:
-        market_prob_up = get_market_probability(market, "UP")
-        print(f"  🏪 Mercado Polymarket encontrado:")
-        print(f"     {market.get('question','')[:70]}")
-        print(f"     Precio mercado (UP): {market_prob_up*100:.1f}¢")
-    else:
-        market_prob_up = 0.50
-        print(f"  ⚠️  No se encontró mercado horario activo — usando base 50/50")
+    if not market:
+        # Sin mercado real no hay nada contra qué apostar. Antes esto caía a
+        # un 50/50 inventado y seguía el mismo flujo de decisión, lo que
+        # podía terminar en action="BET" con market_id=null -- una "apuesta"
+        # que nunca se puede liquidar contra Polymarket porque el mercado no
+        # existe. Encontrado 2026-08-23: 21 de 153 apuestas historicas (14%)
+        # eran de este tipo, desde el primer día. Ahora se corta aquí.
+        print(f"  ⚠️  No se encontró mercado horario activo — no se apuesta este ciclo")
+        entry = {
+            "timestamp": now.isoformat(),
+            "action":    "NO_MARKET",
+            "btc_price": btc,
+            **{k: analysis[k] for k in ["rsi","ema_signal","macd_signal","momentum_1h"]},
+        }
+        log_entry(entry)
+        return entry
+
+    market_prob_up = get_market_probability(market, "UP")
+    print(f"  🏪 Mercado Polymarket encontrado:")
+    print(f"     {market.get('question','')[:70]}")
+    print(f"     Precio mercado (UP): {market_prob_up*100:.1f}¢")
 
     # 6. Elegir el lado con edge real, sin importar hacia dónde apuntaban los
     #    indicadores: si el mercado ya descuenta con fuerza un lado y nuestro
@@ -626,8 +639,8 @@ def run_cycle() -> dict:
         "macd_signal":  analysis["macd_signal"],
         "strength":     analysis["strength"],
         "momentum_1h":  analysis["momentum_1h"],
-        "market_id":    market.get("id") if market else None,
-        "market_q":     market.get("question","")[:80] if market else None,
+        "market_id":    market.get("id"),
+        "market_q":     market.get("question","")[:80],
         "used_model":   used_model,
     }
     log_entry(entry)
