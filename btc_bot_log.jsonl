@@ -986,3 +986,4 @@
 {"timestamp": "2026-08-23T18:38:51.028357+00:00", "action": "BET", "bet_side": "UP", "bet_usd": 10.0, "our_prob": 0.5601, "market_prob": 0.5, "edge": 0.0601, "conviccion_propia": 0.0601, "btc_price": 77345.19, "rsi": 60.93, "ema_signal": "UP", "macd_signal": "UP", "strength": 0.667, "momentum_1h": 0.219, "market_id": null, "market_q": null, "used_model": true}
 {"timestamp": "2026-08-23T19:25:43.540062+00:00", "action": "NO_MARKET", "btc_price": 77365.18, "rsi": 72.84, "ema_signal": "UP", "macd_signal": "UP", "momentum_1h": 0.03}
 {"timestamp": "2026-08-23T20:28:59.522975+00:00", "action": "NO_MARKET", "btc_price": 77410.43, "rsi": 72.86, "ema_signal": "UP", "macd_signal": "UP", "momentum_1h": 0.083}
+{"timestamp": "2026-08-23T21:26:55.368073+00:00", "action": "NO_MARKET", "btc_price": 77978.02, "rsi": 79.41, "ema_signal": "UP", "macd_signal": "UP", "momentum_1h": 0.745}
