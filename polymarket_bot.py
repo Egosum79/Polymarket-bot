@@ -314,6 +314,26 @@ def analyze_btc_market(market: dict, btc: dict, mu: float, sigma: float) -> dict
     else:
         return None   # sin ventaja suficiente
 
+    # Veto por tendencia: investigación 2026-08-25 sobre las 18 apuestas
+    # liquidadas hasta ahora mostró que apostar EN CONTRA de la tendencia
+    # reciente (7d, o 24h si 7d es ~plana) ganaba solo 6.2% (16 apuestas,
+    # -$93.57), mientras que a favor de la tendencia el resultado era muy
+    # distinto (-$2.51 en apenas 2 apuestas, pero sin las pérdidas
+    # sistemáticas). Causa: el drift del modelo GBM se reduce a una cuarta
+    # parte (ver estimate_btc_drift_vol) para no sobre-reaccionar a ruido de
+    # corto plazo -- pero en una tendencia real y sostenida (como el rally
+    # de BTC este mes) eso hace que el modelo trate a BTC como casi sin
+    # tendencia mientras el mercado sí la refleja, generando un "edge"
+    # fantasma para apostar contra el rally una y otra vez. Mismo patrón
+    # que el veto de momentum de btc_scalp_bot.py.
+    tendencia = change_7d if abs(change_7d) > 0.005 else change_24h
+    if abs(tendencia) > 0.005:
+        tendencia_dir = "UP" if tendencia > 0 else "DOWN"
+        apuesta_dir = ("UP" if bet_side == "YES" else "DOWN") if direction == "UP" \
+            else ("DOWN" if bet_side == "YES" else "UP")
+        if apuesta_dir != tendencia_dir:
+            return None   # no pelear contra una tendencia reciente establecida
+
     # ── Tamaño de apuesta (Kelly simplificado) ────────
     # f = (edge * (1/bet_price - 1) - (1-edge)) / (1/bet_price - 1)
     # Limitado a APUESTA_MIN/MAX
