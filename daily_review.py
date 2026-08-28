@@ -231,6 +231,14 @@ def analyze_pnl(settlements: list[dict]) -> dict:
 
 CAPITAL_INICIAL = 100.0   # banco simulado de arranque, por bot
 
+# Bot 3 arrastra un agujero grande (-$735) de antes del veto de momentum
+# (2026-08-03), que hoy sigue tapando una recuperación real: desde el
+# arreglo el bot va positivo, pero el capital acumulado total no lo refleja
+# porque sigue sumando sobre la base de julio. Se decidió NO reiniciar el
+# historial (a diferencia de esports/bot1, esa pérdida vieja es real, no un
+# artefacto de un bug de conteo) sino mostrar ambas curvas en el reporte.
+BOT3_ARREGLO_MOMENTUM_TS = "2026-08-03T22:15:14"
+
 
 def compute_capital(settlements: list[dict], initial: float = CAPITAL_INICIAL) -> dict:
     """
@@ -265,10 +273,12 @@ def compute_capital(settlements: list[dict], initial: float = CAPITAL_INICIAL) -
     bot2 = [s for s in settlements if s.get("bot") == "bot2"]
     bot3 = [s for s in settlements if s.get("bot") == "bot3"]
     esports = [s for s in settlements if s.get("bot") == "esports"]
+    bot3_post_arreglo = [s for s in bot3 if (s.get("timestamp") or "") >= BOT3_ARREGLO_MOMENTUM_TS]
     return {
         "bot1":    curve(bot1),
         "bot2":    curve(bot2),
         "bot3":    curve(bot3),
+        "bot3_post_arreglo": curve(bot3_post_arreglo),
         "esports": curve(esports),
     }
 
@@ -430,6 +440,9 @@ def build_report(summary: dict, all_entries: list[dict],
         lines += _capital_table_md("Bot 1: Polymarket Señales", capital["bot1"])
         lines += _capital_table_md("Bot 2: BTC Dirección 1H", capital["bot2"])
         lines += _capital_table_md("Bot 3: BTC Scalp 15min", capital["bot3"])
+        lines += _capital_table_md(
+            "Bot 3: BTC Scalp 15min — desde el veto de momentum (2026-08-03)",
+            capital["bot3_post_arreglo"])
         lines += _capital_table_md("Bot 4: Esports", capital["esports"])
         lines += [
             "*Nota: no reserva capital para apuestas todavía abiertas — puede mostrar "
@@ -724,6 +737,9 @@ def build_email_html(summary: dict, all_entries: list[dict],
         parts.append(capital_block("Bot 1: Polymarket Señales", capital["bot1"]))
         parts.append(capital_block("Bot 2: BTC Dirección 1H", capital["bot2"]))
         parts.append(capital_block("Bot 3: BTC Scalp 15min", capital["bot3"]))
+        parts.append(capital_block(
+            "Bot 3: BTC Scalp 15min — desde el veto de momentum (2026-08-03)",
+            capital["bot3_post_arreglo"]))
         parts.append(capital_block("Bot 4: Esports", capital["esports"]))
         parts.append(
             "<p style='color:#999;font-size:12px'>Nota: no reserva capital para apuestas "
