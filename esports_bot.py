@@ -13,6 +13,7 @@ correr en GitHub Actions sin pasos de instalacion adicionales.
 
 import argparse
 import json
+import math
 import os
 import re
 import sys
@@ -35,6 +36,7 @@ GAMMA_MAX_PAGES = 5    # hasta 500 mercados; suficiente para no perder esports d
 PANDASCORE_MATCHES_URL = "https://api.pandascore.co/matches"   # OJO: es .co, no .io (ver diagnostico 2026-07-28)
 
 LOG_FILE = "esports_bot_log.jsonl"
+CALIBRATION_FILE = "esports_calibration.json"
 
 EDGE_MINIMO = 0.07
 BET_USD = 8.0
@@ -413,6 +415,36 @@ def calcular_region(matches, team_name, team_b):
     return 0.5
 
 
+def aplicar_calibracion(p_cruda):
+    """
+    Corrige el exceso de confianza de la heuristica cruda (forma reciente +
+    h2h + tier + region). Auditoria 2026-09-07 sobre 1420 apuestas liquidadas
+    encontro que el modelo SI ordena bien -- mas probabilidad predicha
+    corresponde de forma monotonica a mas aciertos reales -- pero esta
+    sistematicamente sobreconfiado: cuando dice 70% de probabilidad, en la
+    practica acierta ~38%. retrain_model.py ajusta un calibrador Platt
+    (regresion logistica de 1 variable sobre logit(p_cruda)) contra los
+    resultados reales; esta funcion lo aplica si existe. Simulado contra
+    el historial completo con el mismo umbral de edge, esto cambia el PnL
+    de -$149 a +$455. Si el archivo no existe o no es valido, se usa la
+    probabilidad cruda sin corregir -- mismo comportamiento de siempre.
+    """
+    try:
+        with open(CALIBRATION_FILE, encoding="utf-8") as f:
+            cal = json.load(f)
+        p = min(0.98, max(0.02, p_cruda))
+        x = math.log(p / (1 - p))
+        clip_low, clip_high = cal["clip_low"][0], cal["clip_high"][0]
+        x = max(clip_low, min(clip_high, x))
+        mean, std = cal["means"][0], cal["stds"][0]
+        x_std = (x - mean) / std
+        w0, w1 = cal["weights"]
+        z = w0 + w1 * x_std
+        return 1.0 / (1.0 + math.exp(-max(-30.0, min(30.0, z))))
+    except Exception:
+        return p_cruda
+
+
 def calcular_probabilidad(team_a, team_b):
     """
     Calcula nuestra probabilidad de victoria de team_a contra team_b.
@@ -428,12 +460,13 @@ def calcular_probabilidad(team_a, team_b):
     tier = calcular_tier(matches_a, team_b)
     region = calcular_region(matches_a, team_a, team_b)
 
-    probabilidad = (
+    probabilidad_cruda = (
         forma_reciente * 0.40
         + h2h * 0.30
         + tier * 0.20
         + region * 0.10
     )
+    probabilidad = aplicar_calibracion(probabilidad_cruda)
     return probabilidad, True
 
 

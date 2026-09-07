@@ -44,6 +44,22 @@ CÓMO FUNCIONA:
   correr automáticamente cada día (ver daily-review.yml); mientras
   no haya datos suficientes, simplemente no hace nada.
 
+CALIBRACIÓN DE ESPORTS (auditoría 2026-09-07):
+  esports_bot.py no tiene features técnicas que reentrenar como los bots
+  de BTC -- su heurística (forma reciente 40% + h2h 30% + tier 20% +
+  región 10%) SÍ ordena bien a los equipos (más probabilidad predicha =
+  más aciertos reales, de forma monótona en 1420 apuestas), pero está
+  sistemáticamente sobreconfiada: cuando dice 70% de probabilidad, en
+  la práctica acierta ~38%. En vez de reentrenar los pesos de la mezcla,
+  se ajusta un calibrador Platt (regresión logística de UNA sola variable,
+  logit(probabilidad cruda) → probabilidad real) reutilizando el mismo
+  pipeline de arriba (fit_logistic + elegir_l2 tratan esto como un
+  problema de 1 feature). Simulado contra el historial completo con el
+  mismo umbral de edge, esto cambia el PnL de -$149 a +$455. Se guarda en
+  esports_calibration.json; esports_bot.py lo aplica si existe, y si no,
+  sigue usando la probabilidad cruda sin corregir (mismo comportamiento
+  de siempre).
+
 ⚠️  MUESTRA CHICA = DESCONFIAR:
   Con menos de ~100 muestras, un modelo ajustado puede estar
   memorizando ruido, no una señal real. Esto se refleja en el
@@ -85,6 +101,7 @@ LEARNING_RATE    = 0.3
 L2_GRID          = [0.0, 0.1, 0.3, 1.0, 3.0]   # candidatos de regularizacion L2 a probar
 HOLDOUT_FRACTION = 0.2                          # fraccion (cronologica, mas reciente) reservada para validar
 MIN_RETRAIN_INTERVAL_HOURS = 20                 # no reentrenar mas seguido que esto
+ESPORTS_MIN_SAMPLES = 100   # la heuristica de esports es mas ruidosa que las de BTC
 
 
 # ─────────────────────────────────────────────────────
@@ -94,6 +111,11 @@ MIN_RETRAIN_INTERVAL_HOURS = 20                 # no reentrenar mas seguido que 
 def sigmoid(z: float) -> float:
     z = max(-30.0, min(30.0, z))   # evita overflow en math.exp
     return 1.0 / (1.0 + math.exp(-z))
+
+
+def logit(p: float) -> float:
+    p = min(0.98, max(0.02, p))
+    return math.log(p / (1 - p))
 
 
 def percentile(values: list[float], p: float) -> float:
@@ -363,6 +385,97 @@ def retrain_bot(log_path: str, bot_name: str, feature_names: list[str],
     print(f"     Precisión entrenamiento: {train_accuracy*100:.1f}%{oos_txt}")
 
 
+# ─────────────────────────────────────────────────────
+# CALIBRACIÓN DE ESPORTS (ver docstring del módulo)
+# ─────────────────────────────────────────────────────
+
+def build_dataset_esports(log_entries: list[dict], settlements: list[dict]) -> tuple[list[list[float]], list[int], list[str]]:
+    """
+    A diferencia de build_dataset() (que reconstruye features técnicas para
+    reentrenar pesos), aquí la única "feature" es logit(nuestra probabilidad
+    cruda del lado apostado) -- lo que se calibra es la confianza del propio
+    modelo, no sus insumos.
+    """
+    settled_index = {
+        (s.get("market_id"), s.get("timestamp")): s
+        for s in settlements if s.get("bot") == "esports"
+    }
+    X, y, ts = [], [], []
+    for e in log_entries:
+        if e.get("action") != "BET":
+            continue
+        key = (e.get("market_id"), e.get("timestamp"))
+        s = settled_index.get(key)
+        if s is None:
+            continue
+        p_equipo_a = e.get("our_prob")
+        side = e.get("side")
+        if p_equipo_a is None or side not in ("YES", "NO"):
+            continue
+        # our_prob siempre es P(equipo_a) sin importar el lado apostado --
+        # hay que convertirla a P(lado que realmente se jugó).
+        p_lado = p_equipo_a if side == "YES" else (1 - p_equipo_a)
+        X.append([logit(p_lado)])
+        y.append(1 if s.get("won") else 0)
+        ts.append(e.get("timestamp") or "")
+    return X, y, ts
+
+
+def retrain_esports_calibration(log_path: str = "esports_bot_log.jsonl",
+                                 weights_path: str = "esports_calibration.json",
+                                 settlements: list[dict] | None = None):
+    print(f"\n── esports (calibración Platt) ({log_path}) ──")
+
+    if ya_reentrenado_recientemente(weights_path):
+        print(f"  ⏳ Ya se reentrenó hace menos de {MIN_RETRAIN_INTERVAL_HOURS}h — "
+              f"se omite este ciclo para no acumular ruido.")
+        return
+
+    log_entries = load_jsonl(log_path)
+    X, y, ts = build_dataset_esports(log_entries, settlements or [])
+
+    print(f"  Muestras liquidadas disponibles: {len(X)}")
+    if len(X) < ESPORTS_MIN_SAMPLES:
+        print(f"  ⚪ Todavía no hay suficientes ({ESPORTS_MIN_SAMPLES} mínimo) — "
+              f"sigue con la probabilidad cruda sin calibrar.")
+        return
+
+    l2, oos_accuracy = elegir_l2(X, y, ts)
+    if oos_accuracy is not None:
+        print(f"  🔎 L2 elegido por validación fuera de muestra: {l2} "
+              f"(precisión holdout: {oos_accuracy*100:.1f}%)")
+    else:
+        print(f"  ⚠️  Muestra insuficiente para separar un holdout confiable — "
+              f"usando L2 conservador ({l2})")
+
+    clip_low, clip_high = clip_bounds(X)
+    X_clipped = [clip_row(row, clip_low, clip_high) for row in X]
+    X_std, means, stds = standardize(X_clipped)
+    weights = fit_logistic(X_std, y, l2=l2)
+    train_accuracy = accuracy(weights, X_std, y)
+
+    output = {
+        "calibrador":     "esports",
+        "trained_at":     datetime.now(timezone.utc).isoformat(),
+        "n_samples":      len(X),
+        "feature":        "logit(p_cruda_lado_apostado)",
+        "l2":             l2,
+        "oos_accuracy":   round(oos_accuracy, 4) if oos_accuracy is not None else None,
+        "clip_low":       clip_low,
+        "clip_high":      clip_high,
+        "means":          means,
+        "stds":           stds,
+        "weights":        weights,   # [intercepto, pendiente]
+        "train_accuracy": round(train_accuracy, 4),
+    }
+    with open(weights_path, "w", encoding="utf-8") as f:
+        json.dump(output, f, ensure_ascii=False, indent=2)
+
+    print(f"  ✅ Calibración reajustada con {len(X)} muestras (L2={l2}) → {weights_path}")
+    oos_txt = f" | fuera de muestra (holdout): {oos_accuracy*100:.1f}%" if oos_accuracy is not None else ""
+    print(f"     Precisión entrenamiento: {train_accuracy*100:.1f}%{oos_txt}")
+
+
 def main():
     print("=" * 60)
     print("  RECALIBRADOR DE MODELO (aprendizaje estadístico)")
@@ -381,6 +494,10 @@ def main():
         log_path="btc_scalp_log.jsonl", bot_name="bot3",
         feature_names=["rsi", "ema_diff", "window_momentum"],
         feature_fn=features_bot3, weights_path="bot3_weights.json",
+        settlements=settlements,
+    )
+    retrain_esports_calibration(
+        log_path="esports_bot_log.jsonl", weights_path="esports_calibration.json",
         settlements=settlements,
     )
 
