@@ -63,6 +63,12 @@ CAPITAL_TOTAL      = 100.0   # capital disponible
 MAX_POSICIONES     = 5       # máximo de posiciones abiertas simultáneas
 EDGE_MINIMO        = 0.08    # ventaja mínima para apostar (8 puntos porcentuales)
 INTERVALO_MINUTOS  = 30      # cada cuántos minutos revisar
+DRIFT_SHRINKAGE    = 1.0     # cuanto confiar en la tendencia estimada (ver estimate_btc_drift_vol).
+                             # Subido de 0.25 a 1.0 el 2026-09-07 tras backtest contra apuestas
+                             # ya liquidadas: reducir al 25% solo recortaba oportunidades sin
+                             # mejorar el acierto (66.7% en ambos); confiar en la estimación tal
+                             # cual (1.0) dio mas oportunidades y mejor resultado (70.0%),
+                             # mientras que amplificarla mas alla de eso (1.5x, 2.0x) empeoraba.
 
 # ── Palabras clave para filtrar mercados de BTC ───
 BTC_KEYWORDS = [
@@ -136,10 +142,15 @@ def estimate_btc_drift_vol(prices: list) -> tuple[float, float]:
     históricos, usando retornos logarítmicos entre puntos consecutivos (la
     frecuencia real se mide desde los timestamps, sea horaria o diaria).
 
-    El drift se encoge (shrinkage) hacia 0: el retorno medio de una muestra
-    corta es un estimador muy ruidoso de la tendencia real (su error estándar
-    es del mismo orden que la señal misma). La volatilidad es un estimador
-    mucho más estable y es la que hace el trabajo pesado del modelo.
+    Drift SIN reducir (ver DRIFT_SHRINKAGE más abajo): backtest 2026-09-07
+    contra las apuestas ya liquidadas mostró que reducirlo al 25% (el valor
+    original, para no confiar en una muestra corta y ruidosa) solo recortaba
+    oportunidades sin mejorar el acierto -- el punto óptimo en ese backtest
+    fue confiar en la estimación tal cual sale (factor 1.0); amplificarla
+    más allá de eso (1.5x, 2.0x) sí empeoraba el resultado. Con solo 9-15
+    apuestas por escenario y todas correlacionadas al mismo tramo de precio
+    de BTC, esto no es una confirmación definitiva -- revisar si vale la
+    pena repetir el backtest con más datos.
     """
     if len(prices) < 10:
         return 0.0, 0.02   # fallback conservador (~2% diario, típico de BTC)
@@ -162,7 +173,7 @@ def estimate_btc_drift_vol(prices: list) -> tuple[float, float]:
     mean_r = sum(log_returns) / len(log_returns)
     var_r  = sum((r - mean_r) ** 2 for r in log_returns) / max(1, len(log_returns) - 1)
 
-    mu_daily    = (mean_r / avg_dt) * 0.25   # shrinkage — ver docstring
+    mu_daily    = (mean_r / avg_dt) * DRIFT_SHRINKAGE
     sigma_daily = math.sqrt(var_r / avg_dt)
 
     return mu_daily, max(sigma_daily, 0.005)
