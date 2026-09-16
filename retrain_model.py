@@ -60,6 +60,23 @@ CALIBRACIÓN DE ESPORTS (auditoría 2026-09-07):
   sigue usando la probabilidad cruda sin corregir (mismo comportamiento
   de siempre).
 
+BOOTSTRAP HISTÓRICO PARA BOT3 (investigación 2026-09-16):
+  Con solo ~700 apuestas liquidadas, bot3_weights.json llegaba apenas a
+  58.99% de precisión fuera de muestra -- forzado a ser tímido para no
+  sobreajustarse con tan poca muestra (nunca se aleja mucho de 50/50, ver
+  auditoría del veto de momentum). Reconstruyendo las mismas 3 variables
+  (rsi, ema_diff, window_momentum) para CADA ventana de 15 min de los
+  últimos HIST_DIAS_BOT3 días -- calculable directo del histórico de
+  precios de Binance, sin necesitar que el bot haya apostado ahí -- se
+  consiguen miles de muestras en vez de cientos. El mismo modelo de 3
+  variables, entrenado así, sube a 70.41% fuera de muestra. Por eso
+  build_historical_windows_bot3() genera este dataset y se concatena con
+  las apuestas reales ya liquidadas antes de ajustar bot3_weights.json --
+  no reemplaza los datos reales, los complementa. Bot2 y esports no usan
+  esto: para Bot2 (mercados horarios) reconstruir el equivalente exigiría
+  datos de MACD/volumen/momentum a escala horaria no validados aún, y
+  esports no tiene features técnicas que reconstruir de esta forma.
+
 ⚠️  MUESTRA CHICA = DESCONFIAR:
   Con menos de ~100 muestras, un modelo ajustado puede estar
   memorizando ruido, no una señal real. Esto se refleja en el
@@ -83,9 +100,13 @@ USO:
 import json
 import math
 import sys
+import time
+import urllib.error
+import urllib.request
 from datetime import datetime, timezone
 
 from settle_bets import load_jsonl
+from btc_direction_bot import ema, rsi   # mismas funciones que usa el bot en vivo
 
 # En consolas Windows con codepage legado (cp1252), imprimir emojis revienta
 # con UnicodeEncodeError. Forzamos stdout/stderr a UTF-8 si el terminal lo permite.
@@ -102,6 +123,13 @@ L2_GRID          = [0.0, 0.1, 0.3, 1.0, 3.0]   # candidatos de regularizacion L2
 HOLDOUT_FRACTION = 0.2                          # fraccion (cronologica, mas reciente) reservada para validar
 MIN_RETRAIN_INTERVAL_HOURS = 20                 # no reentrenar mas seguido que esto
 ESPORTS_MIN_SAMPLES = 100   # la heuristica de esports es mas ruidosa que las de BTC
+
+# ── Bootstrap historico para bot3 (ver docstring del modulo) ──
+BINANCE_KLINES_URL = "https://data-api.binance.vision/api/v3/klines"
+HIST_DIAS_BOT3 = 60          # dias de velas 1m a reconstruir
+HIST_CANDLES_LOOKBACK = 30   # igual a CANDLES_1M en btc_scalp_bot.py
+HIST_OFFSET_MIN = 5          # evaluar 5 min despues de abierta cada ventana de 15 min
+HIST_DURACION_VENTANA = 15
 
 
 # ─────────────────────────────────────────────────────
@@ -258,6 +286,85 @@ def features_bot3(e: dict) -> list[float] | None:
 
 
 # ─────────────────────────────────────────────────────
+# BOOTSTRAP HISTÓRICO PARA BOT3 (ver docstring del módulo)
+# ─────────────────────────────────────────────────────
+
+def _fetch_klines_1m(dias: int) -> list[list]:
+    """Descarga velas de 1 minuto de BTCUSDT paginando de a 1000."""
+    end_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
+    start_ms = end_ms - dias * 86_400_000
+    paso_ms = 1000 * 60_000  # 1000 velas de 1 min
+
+    todas = []
+    cursor = start_ms
+    while cursor < end_ms:
+        tramo_fin = min(cursor + paso_ms, end_ms)
+        url = f"{BINANCE_KLINES_URL}?symbol=BTCUSDT&interval=1m&startTime={cursor}&endTime={tramo_fin}&limit=1000"
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        try:
+            with urllib.request.urlopen(req, timeout=20) as resp:
+                data = json.loads(resp.read())
+        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError):
+            cursor = tramo_fin
+            continue
+        if not data:
+            cursor = tramo_fin
+            continue
+        todas.extend(data)
+        cursor = data[-1][0] + 60_000
+        time.sleep(0.12)
+    return todas
+
+
+def build_historical_windows_bot3(dias: int = HIST_DIAS_BOT3) -> tuple[list[list[float]], list[int], list[str]]:
+    """
+    Reconstruye, para cada ventana de 15 min (alineada a :00/:15/:30/:45 UTC)
+    de los ultimos `dias` dias, las mismas 3 variables que usa bot3 en vivo
+    (rsi, ema_diff, window_momentum) evaluadas HIST_OFFSET_MIN minutos
+    despues de abierta la ventana, junto con si el precio subio o bajo al
+    cierre. No depende de que el bot haya apostado -- se calcula directo
+    del historico real de precios (ver docstring del modulo).
+    """
+    klines = _fetch_klines_1m(dias)
+    if len(klines) < HIST_CANDLES_LOOKBACK + HIST_DURACION_VENTANA + 10:
+        return [], [], []
+
+    closes = [float(k[4]) for k in klines]
+    times = [k[0] for k in klines]
+    n = len(klines)
+
+    X, y, ts = [], [], []
+    for i in range(HIST_CANDLES_LOOKBACK, n):
+        minuto_del_dia = (times[i] // 60_000) % (24 * 60)
+        if minuto_del_dia % HIST_DURACION_VENTANA != HIST_OFFSET_MIN:
+            continue
+
+        idx_apertura = i - HIST_OFFSET_MIN
+        idx_cierre = i - HIST_OFFSET_MIN + HIST_DURACION_VENTANA
+        if idx_cierre >= n:
+            continue
+
+        window_open_price = closes[idx_apertura]
+        window_close_price = closes[idx_cierre]
+
+        ventana_cerrada = closes[max(0, i - HIST_CANDLES_LOOKBACK + 1):i + 1]
+        if len(ventana_cerrada) < HIST_CANDLES_LOOKBACK:
+            continue
+
+        rsi_val = rsi(ventana_cerrada)
+        ema5 = ema(ventana_cerrada, 5)[-1]
+        ema15 = ema(ventana_cerrada, 15)[-1]
+        ema_diff = ema5 - ema15
+        window_momentum = (ventana_cerrada[-1] - window_open_price) / window_open_price * 100
+
+        X.append([rsi_val, ema_diff, window_momentum])
+        y.append(1 if window_close_price > window_open_price else 0)
+        ts.append(str(times[i]))
+
+    return X, y, ts
+
+
+# ─────────────────────────────────────────────────────
 # SELECCIÓN DE REGULARIZACIÓN POR HOLDOUT CRONOLÓGICO
 # ─────────────────────────────────────────────────────
 
@@ -328,7 +435,8 @@ def ya_reentrenado_recientemente(weights_path: str) -> bool:
 # ─────────────────────────────────────────────────────
 
 def retrain_bot(log_path: str, bot_name: str, feature_names: list[str],
-                 feature_fn, weights_path: str, settlements: list[dict]):
+                 feature_fn, weights_path: str, settlements: list[dict],
+                 historical_fn=None):
     print(f"\n── {bot_name} ({log_path}) ──")
 
     if ya_reentrenado_recientemente(weights_path):
@@ -338,8 +446,22 @@ def retrain_bot(log_path: str, bot_name: str, feature_names: list[str],
 
     log_entries = load_jsonl(log_path)
     X, y, ts = build_dataset(log_entries, settlements, bot_name, feature_fn)
+    print(f"  Apuestas liquidadas disponibles: {len(X)}")
 
-    print(f"  Muestras liquidadas disponibles: {len(X)}")
+    if historical_fn is not None:
+        try:
+            X_hist, y_hist, ts_hist = historical_fn()
+        except Exception as e:
+            X_hist, y_hist, ts_hist = [], [], []
+            print(f"  ⚠️  No se pudo reconstruir el histórico de precios: {e}", file=sys.stderr)
+        if X_hist:
+            print(f"  + {len(X_hist)} ventanas reconstruidas del histórico real de precios "
+                  f"(no dependen de que el bot haya apostado — ver docstring del módulo)")
+            X = X + X_hist
+            y = y + y_hist
+            ts = ts + ts_hist
+
+    print(f"  Muestras totales para el ajuste: {len(X)}")
     if len(X) < MIN_SAMPLES:
         print(f"  ⚪ Todavía no hay suficientes ({MIN_SAMPLES} mínimo) — "
               f"sigue con la heurística original.")
@@ -495,6 +617,7 @@ def main():
         feature_names=["rsi", "ema_diff", "window_momentum"],
         feature_fn=features_bot3, weights_path="bot3_weights.json",
         settlements=settlements,
+        historical_fn=build_historical_windows_bot3,
     )
     retrain_esports_calibration(
         log_path="esports_bot_log.jsonl", weights_path="esports_calibration.json",
