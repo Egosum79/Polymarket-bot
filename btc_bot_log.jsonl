@@ -1166,3 +1166,4 @@
 {"timestamp": "2026-09-16T22:47:36.368755+00:00", "action": "SKIP", "reason": "NEUTRAL", "btc_price": 75786.0, "rsi": 51.06, "ema_signal": "DOWN", "macd_signal": "UP", "momentum_1h": -0.25}
 {"timestamp": "2026-09-17T01:13:24.522333+00:00", "action": "NO_MARKET", "btc_price": 76264.35, "rsi": 50.27, "ema_signal": "UP", "macd_signal": "UP", "momentum_1h": -0.103}
 {"timestamp": "2026-09-17T07:26:32.492432+00:00", "action": "PASS", "bet_side": null, "bet_usd": 0, "our_prob": 0.501, "market_prob": 0.415, "edge": 0.086, "conviccion_propia": 0.001, "btc_price": 76551.51, "rsi": 65.79, "ema_signal": "UP", "macd_signal": "UP", "strength": 0.667, "momentum_1h": 0.097, "market_id": "4608720", "market_q": "Bitcoin Up or Down - September 17, 3:15AM-3:30AM ET", "used_model": true}
+{"timestamp": "2026-09-17T13:15:40.358743+00:00", "action": "NO_MARKET", "btc_price": 76680.01, "rsi": 67.15, "ema_signal": "UP", "macd_signal": "UP", "momentum_1h": -0.074}
