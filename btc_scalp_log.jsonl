@@ -9425,3 +9425,4 @@
 {"timestamp": "2026-09-19T14:35:10.983730+00:00", "action": "PASS", "bet_side": null, "bet_usd": 0, "our_prob": 0.5251, "market_prob": 0.515, "edge": 0.0101, "conviccion_propia": 0.0251, "contra_momentum": false, "btc_price": 81540.52, "rsi": 51.26, "ema_diff": 20.02, "window_momentum": 0.008, "market_id": "4688017", "market_q": "Bitcoin Up or Down - September 19, 10:30AM-10:45AM ET", "used_model": true}
 {"timestamp": "2026-09-19T14:40:11.508624+00:00", "action": "PASS", "bet_side": null, "bet_usd": 0, "our_prob": 0.3817, "market_prob": 0.225, "edge": 0.1567, "conviccion_propia": 0.1183, "contra_momentum": true, "btc_price": 81506.01, "rsi": 47.63, "ema_diff": -6.08, "window_momentum": -0.0343, "market_id": "4688017", "market_q": "Bitcoin Up or Down - September 19, 10:30AM-10:45AM ET", "used_model": true}
 {"timestamp": "2026-09-19T14:45:11.058326+00:00", "action": "NO_MARKET"}
+{"timestamp": "2026-09-19T14:50:11.680872+00:00", "action": "NO_MARKET"}
