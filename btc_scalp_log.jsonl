@@ -10027,3 +10027,4 @@
 {"timestamp": "2026-09-21T15:35:12.149536+00:00", "action": "SKIP", "reason": "YA_APOSTADO", "market_id": "4761480"}
 {"timestamp": "2026-09-21T15:40:13.322802+00:00", "action": "SKIP", "reason": "YA_APOSTADO", "market_id": "4761480"}
 {"timestamp": "2026-09-21T15:45:14.265668+00:00", "action": "NO_MARKET"}
+{"timestamp": "2026-09-21T15:50:12.824463+00:00", "action": "NO_MARKET"}
