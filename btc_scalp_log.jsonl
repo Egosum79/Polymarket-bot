@@ -9880,3 +9880,4 @@
 {"timestamp": "2026-09-21T03:30:12.531814+00:00", "action": "BET", "bet_side": "UP", "bet_usd": 10.0, "our_prob": 0.7241, "market_prob": 0.495, "edge": 0.2291, "conviccion_propia": 0.2241, "contra_momentum": false, "btc_price": 81474.0, "rsi": 59.34, "ema_diff": 26.82, "window_momentum": 0.0818, "market_id": "4744298", "market_q": "Bitcoin Up or Down - September 20, 11:30PM-11:45PM ET", "used_model": true}
 {"timestamp": "2026-09-21T03:35:11.551747+00:00", "action": "SKIP", "reason": "YA_APOSTADO", "market_id": "4744298"}
 {"timestamp": "2026-09-21T03:40:13.014059+00:00", "action": "SKIP", "reason": "YA_APOSTADO", "market_id": "4744298"}
+{"timestamp": "2026-09-21T03:45:12.075167+00:00", "action": "NO_MARKET"}
