@@ -10305,3 +10305,4 @@
 {"timestamp": "2026-09-22T14:20:11.509361+00:00", "action": "SKIP", "reason": "YA_APOSTADO", "market_id": "4794391"}
 {"timestamp": "2026-09-22T14:25:15.422177+00:00", "action": "SKIP", "reason": "YA_APOSTADO", "market_id": "4794391"}
 {"timestamp": "2026-09-22T14:30:16.387672+00:00", "action": "BET", "bet_side": "DOWN", "bet_usd": 10.0, "our_prob": 0.8416, "market_prob": 0.615, "edge": 0.2266, "conviccion_propia": 0.3416, "contra_momentum": false, "btc_price": 85918.01, "rsi": 13.82, "ema_diff": -97.6, "window_momentum": -0.1408, "market_id": "4794555", "market_q": "Bitcoin Up or Down - September 22, 10:30AM-10:45AM ET", "used_model": true}
+{"timestamp": "2026-09-22T14:35:12.343969+00:00", "action": "SKIP", "reason": "YA_APOSTADO", "market_id": "4794555"}
