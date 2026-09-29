@@ -72,10 +72,23 @@ BOOTSTRAP HISTÓRICO PARA BOT3 (investigación 2026-09-16):
   variables, entrenado así, sube a 70.41% fuera de muestra. Por eso
   build_historical_windows_bot3() genera este dataset y se concatena con
   las apuestas reales ya liquidadas antes de ajustar bot3_weights.json --
-  no reemplaza los datos reales, los complementa. Bot2 y esports no usan
-  esto: para Bot2 (mercados horarios) reconstruir el equivalente exigiría
-  datos de MACD/volumen/momentum a escala horaria no validados aún, y
-  esports no tiene features técnicas que reconstruir de esta forma.
+  no reemplaza los datos reales, los complementa.
+
+BOOTSTRAP HISTÓRICO PARA BOT2 (investigación 2026-09-29):
+  Mismo problema, más agudo: con solo 163 apuestas, bot2_weights.json daba
+  45.45% fuera de muestra -- peor que adivinar. La correlación univariante
+  contra el histórico reconstruido reveló por qué: rsi/ema_signal/
+  macd_signal se calculan sobre velas de 1 HORA, pero la apuesta real
+  resuelve en 15 minutos -- ema_signal y macd_signal casi no tienen
+  relación con ese resultado (correlación ~0.0006 y ~0.0044, ruido puro),
+  solo momentum_1h (~0.31) y algo rsi (~0.07) cargan señal real. Con tan
+  pocas muestras el modelo no podía distinguir señal de ruido y terminaba
+  encogiendo todo a casi cero. build_historical_windows_bot2() reconstruye
+  ~2160 puntos horarios (velas 1h para las features + velas 1m para la
+  etiqueta real de 15 min) y sube el modelo a 67.13% fuera de muestra,
+  dejando que L2 aprenda a ignorar ema_signal/macd_signal en vez de
+  diluir también rsi/momentum_1h. Esports no usa esto: no tiene features
+  técnicas que reconstruir de esta forma.
 
 ⚠️  MUESTRA CHICA = DESCONFIAR:
   Con menos de ~100 muestras, un modelo ajustado puede estar
@@ -130,6 +143,12 @@ HIST_DIAS_BOT3 = 60          # dias de velas 1m a reconstruir
 HIST_CANDLES_LOOKBACK = 30   # igual a CANDLES_1M en btc_scalp_bot.py
 HIST_OFFSET_MIN = 5          # evaluar 5 min despues de abierta cada ventana de 15 min
 HIST_DURACION_VENTANA = 15
+
+# ── Bootstrap historico para bot2 (ver docstring del modulo) ──
+HIST_DIAS_BOT2_1H = 365      # dias de velas 1h para las features (historia larga, barata)
+HIST_DIAS_BOT2_1M = 90       # dias de velas 1m para la etiqueta real de 15 min (mas cara)
+HIST_CANDLES_BOT2 = 50       # igual a CANDLES en btc_direction_bot.py
+HIST_LABEL_MIN_BOT2 = 15     # la apuesta real resuelve en 15 min, no en 1 hora
 
 
 # ─────────────────────────────────────────────────────
@@ -286,20 +305,24 @@ def features_bot3(e: dict) -> list[float] | None:
 
 
 # ─────────────────────────────────────────────────────
-# BOOTSTRAP HISTÓRICO PARA BOT3 (ver docstring del módulo)
+# BOOTSTRAP HISTÓRICO (ver docstring del módulo)
 # ─────────────────────────────────────────────────────
 
-def _fetch_klines_1m(dias: int) -> list[list]:
-    """Descarga velas de 1 minuto de BTCUSDT paginando de a 1000."""
+_MS_POR_VELA = {"1m": 60_000, "1h": 3_600_000}
+
+
+def _fetch_klines(interval: str, dias: int) -> list[list]:
+    """Descarga velas de BTCUSDT (cualquier intervalo soportado por Binance) paginando de a 1000."""
     end_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
     start_ms = end_ms - dias * 86_400_000
-    paso_ms = 1000 * 60_000  # 1000 velas de 1 min
+    ms_vela = _MS_POR_VELA[interval]
+    paso_ms = 1000 * ms_vela
 
     todas = []
     cursor = start_ms
     while cursor < end_ms:
         tramo_fin = min(cursor + paso_ms, end_ms)
-        url = f"{BINANCE_KLINES_URL}?symbol=BTCUSDT&interval=1m&startTime={cursor}&endTime={tramo_fin}&limit=1000"
+        url = f"{BINANCE_KLINES_URL}?symbol=BTCUSDT&interval={interval}&startTime={cursor}&endTime={tramo_fin}&limit=1000"
         req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
         try:
             with urllib.request.urlopen(req, timeout=20) as resp:
@@ -311,7 +334,7 @@ def _fetch_klines_1m(dias: int) -> list[list]:
             cursor = tramo_fin
             continue
         todas.extend(data)
-        cursor = data[-1][0] + 60_000
+        cursor = data[-1][0] + ms_vela
         time.sleep(0.12)
     return todas
 
@@ -325,7 +348,7 @@ def build_historical_windows_bot3(dias: int = HIST_DIAS_BOT3) -> tuple[list[list
     cierre. No depende de que el bot haya apostado -- se calcula directo
     del historico real de precios (ver docstring del modulo).
     """
-    klines = _fetch_klines_1m(dias)
+    klines = _fetch_klines("1m", dias)
     if len(klines) < HIST_CANDLES_LOOKBACK + HIST_DURACION_VENTANA + 10:
         return [], [], []
 
@@ -360,6 +383,79 @@ def build_historical_windows_bot3(dias: int = HIST_DIAS_BOT3) -> tuple[list[list
         X.append([rsi_val, ema_diff, window_momentum])
         y.append(1 if window_close_price > window_open_price else 0)
         ts.append(str(times[i]))
+
+    return X, y, ts
+
+
+def _macd_hists_bot2(closes: list[float]) -> tuple[float, float]:
+    ema12 = ema(closes, 12)
+    ema26 = ema(closes, 26)
+    macd_line = [ema12[i] - ema26[i] for i in range(len(closes))]
+    signal = ema(macd_line, 9)
+    histogram = [macd_line[i] - signal[i] for i in range(len(macd_line))]
+    return histogram[-1], (histogram[-2] if len(histogram) > 1 else 0)
+
+
+def build_historical_windows_bot2() -> tuple[list[list[float]], list[int], list[str]]:
+    """
+    Reconstruye, para cada marca de hora de los ultimos HIST_DIAS_BOT2_1M
+    dias, las mismas 4 variables que usa bot2 en vivo (rsi, ema_signal,
+    macd_signal, momentum_1h) calculadas sobre HIST_CANDLES_BOT2 velas de
+    1h -- exactamente como analyze_candles() -- junto con si el precio
+    subio o bajo en los HIST_LABEL_MIN_BOT2 minutos siguientes (la ventana
+    real que bot2 apuesta, aunque sus indicadores sean horarios -- ver
+    docstring del modulo). Necesita velas de 1h (features, historia larga
+    y barata) y de 1m (etiqueta real de 15 min, mas cara de descargar, por
+    eso con menos dias de cobertura -- solo se pierden los puntos horarios
+    que caen fuera de esa ventana mas chica).
+    """
+    klines_1h = _fetch_klines("1h", HIST_DIAS_BOT2_1H)
+    klines_1m = _fetch_klines("1m", HIST_DIAS_BOT2_1M)
+    if len(klines_1h) < HIST_CANDLES_BOT2 + 10 or not klines_1m:
+        return [], [], []
+
+    closes_1h = [float(k[4]) for k in klines_1h]
+    times_1h = [k[0] for k in klines_1h]
+    times_1m = [k[0] for k in klines_1m]
+    closes_1m = [float(k[4]) for k in klines_1m]
+    idx_1m = {t: i for i, t in enumerate(times_1m)}
+
+    n = len(klines_1h)
+    X, y, ts = [], [], []
+    for i in range(HIST_CANDLES_BOT2, n):
+        ts_hora = times_1h[i]
+        if ts_hora not in idx_1m:
+            continue
+        idx_apertura = idx_1m[ts_hora]
+        idx_cierre = idx_apertura + HIST_LABEL_MIN_BOT2
+        if idx_cierre >= len(closes_1m):
+            continue
+
+        ventana = closes_1h[i - HIST_CANDLES_BOT2 + 1:i + 1]
+
+        rsi_val = rsi(ventana)
+        ema9 = ema(ventana, 9)[-1]
+        ema21 = ema(ventana, 21)[-1]
+        ema_signal = 1.0 if (ema9 - ema21) > 0 else -1.0
+
+        hist_now, hist_prev = _macd_hists_bot2(ventana)
+        if hist_now > 0 and hist_prev <= 0:
+            macd_signal = 1.0
+        elif hist_now < 0 and hist_prev >= 0:
+            macd_signal = -1.0
+        elif hist_now > 0:
+            macd_signal = 1.0
+        else:
+            macd_signal = -1.0
+
+        momentum_1h = (ventana[-1] - ventana[-2]) / ventana[-2] * 100
+
+        precio_apertura = closes_1m[idx_apertura]
+        precio_cierre = closes_1m[idx_cierre]
+
+        X.append([rsi_val, ema_signal, macd_signal, momentum_1h])
+        y.append(1 if precio_cierre > precio_apertura else 0)
+        ts.append(str(ts_hora))
 
     return X, y, ts
 
@@ -611,6 +707,7 @@ def main():
         feature_names=["rsi", "ema_signal", "macd_signal", "momentum_1h"],
         feature_fn=features_bot2, weights_path="bot2_weights.json",
         settlements=settlements,
+        historical_fn=build_historical_windows_bot2,
     )
     retrain_bot(
         log_path="btc_scalp_log.jsonl", bot_name="bot3",
