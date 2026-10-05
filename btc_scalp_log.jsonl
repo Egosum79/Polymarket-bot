@@ -12120,3 +12120,4 @@
 {"timestamp": "2026-10-05T00:11:57.203429+00:00", "action": "PASS", "bet_side": null, "bet_usd": 0, "our_prob": 0.3264, "market_prob": 0.255, "edge": 0.0714, "conviccion_propia": 0.1736, "contra_momentum": true, "btc_price": 86464.0, "rsi": 48.41, "ema_diff": 0.18, "window_momentum": -0.0555, "market_id": "5262302", "market_q": "Bitcoin Up or Down - October 4, 8:00PM-8:15PM ET", "used_model": true}
 {"timestamp": "2026-10-05T00:15:13.456601+00:00", "action": "NO_MARKET"}
 {"timestamp": "2026-10-05T00:20:12.897613+00:00", "action": "NO_MARKET"}
+{"timestamp": "2026-10-05T00:25:11.639165+00:00", "action": "NO_MARKET"}
