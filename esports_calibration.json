@@ -1,0 +1,25 @@
+{
+  "calibrador": "esports",
+  "trained_at": "2026-10-09T14:55:11.162662+00:00",
+  "n_samples": 2406,
+  "feature": "logit(p_cruda_lado_apostado)",
+  "l2": 0.0,
+  "oos_accuracy": 0.6923,
+  "clip_low": [
+    -0.8472978603872034
+  ],
+  "clip_high": [
+    1.3208044674228128
+  ],
+  "means": [
+    0.1790021860811109
+  ],
+  "stds": [
+    0.4319006806411655
+  ],
+  "weights": [
+    -0.7842542538262212,
+    0.2938208871419344
+  ],
+  "train_accuracy": 0.6833
+}
