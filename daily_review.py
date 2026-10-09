@@ -220,12 +220,16 @@ def analyze_pnl(settlements: list[dict]) -> dict:
     bot2 = [s for s in settlements if s.get("bot") == "bot2"]
     bot3 = [s for s in settlements if s.get("bot") == "bot3"]
     esports = [s for s in settlements if s.get("bot") == "esports"]
+    bot5 = [s for s in settlements if s.get("bot") == "bot5"]
     return {
         "bot1":     _summarize_settlements(bot1),
         "bot2":     _summarize_settlements(bot2),
         "bot3":     _summarize_settlements(bot3),
         "esports":  _summarize_settlements(esports),
-        "combined": _summarize_settlements(settlements),
+        "bot5":     _summarize_settlements(bot5),
+        # Bot 5 replica las señales de Bot 3 con otra apuesta: sumarlo aquí
+        # duplicaría esas señales en el total, así que queda fuera.
+        "combined": _summarize_settlements([s for s in settlements if s.get("bot") != "bot5"]),
     }
 
 
@@ -274,13 +278,77 @@ def compute_capital(settlements: list[dict], initial: float = CAPITAL_INICIAL) -
     bot3 = [s for s in settlements if s.get("bot") == "bot3"]
     esports = [s for s in settlements if s.get("bot") == "esports"]
     bot3_post_arreglo = [s for s in bot3 if (s.get("timestamp") or "") >= BOT3_ARREGLO_MOMENTUM_TS]
+    bot5 = [s for s in settlements if s.get("bot") == "bot5"]
     return {
         "bot1":    curve(bot1),
         "bot2":    curve(bot2),
         "bot3":    curve(bot3),
         "bot3_post_arreglo": curve(bot3_post_arreglo),
         "esports": curve(esports),
+        "bot5":    curve(bot5),
     }
+
+
+
+# Bot 5 = Bot 3 con apuesta proporcional (ver btc_scalp_prop_bot.py). Estas
+# constantes deben mantenerse iguales a las de ese archivo: solo sirven para
+# mostrar en el reporte cuánto apostaría el bot con el capital de hoy.
+BOT5_STAKE_PCT, BOT5_STAKE_MIN, BOT5_STAKE_MAX = 0.05, 10.0, 50.0
+
+
+def _usd(x: float) -> str:
+    return f"{'-' if x < 0 else ''}${abs(x):,.2f}"
+
+
+def _bot5_data(capital: dict):
+    entries = load_log("btc_scalp_prop_log.jsonl")
+    resumen = analyze_btc(entries_last_24h(entries))
+    cap = capital["bot5"]["current"]
+    proxima = round(min(BOT5_STAKE_MAX, max(BOT5_STAKE_MIN, BOT5_STAKE_PCT * cap)), 2)
+    return entries, resumen, cap, proxima
+
+
+def _bot5_md(capital: dict) -> list[str]:
+    entries, r, cap, proxima = _bot5_data(capital)
+    return [
+        "---",
+        "",
+        "## 🧪 Bot 5: BTC Scalp Proporcional (btc_scalp_prop_log.jsonl)",
+        "",
+        "*Experimento paralelo a Bot 3: misma señal y filtros, pero la apuesta es el 5% del "
+        "capital simulado de este bot (piso $10, tope $50). Se actualiza una vez al día, "
+        "cuando se liquidan las apuestas.*",
+        "",
+        "| Métrica | Valor |",
+        "|---------|-------|",
+        f"| Capital simulado actual | {_usd(cap)} |",
+        f"| Apuesta vigente por señal | {_usd(proxima)} |",
+        f"| Total ciclos (últimas 24h) | {r['total']} |",
+        f"| 🟢 Apuestas UP | {r['bets_up']} |",
+        f"| 🔴 Apuestas DOWN | {r['bets_down']} |",
+        f"| Apuesta simulada total (24h) | {_usd(r['total_bet'])} |",
+        f"| Total histórico en log | {len(entries)} |",
+        "",
+    ]
+
+
+def _bot5_html(capital: dict) -> str:
+    entries, r, cap, proxima = _bot5_data(capital)
+    filas = [
+        ("Capital simulado actual", _usd(cap)),
+        ("Apuesta vigente por señal", _usd(proxima)),
+        ("Total ciclos (últimas 24h)", str(r["total"])),
+        ("🟢 Apuestas UP", str(r["bets_up"])),
+        ("🔴 Apuestas DOWN", str(r["bets_down"])),
+        ("Apuesta simulada total (24h)", _usd(r["total_bet"])),
+        ("Total histórico en log", str(len(entries))),
+    ]
+    rows = "".join(_table_row([a, b]) for a, b in filas)
+    return ("<hr><h3>🧪 Bot 5: BTC Scalp Proporcional</h3>"
+            "<p style='color:#555;font-size:13px'>Experimento paralelo a Bot 3: misma señal y "
+            "filtros, apuesta = 5% del capital simulado de este bot (piso $10, tope $50). "
+            "Se actualiza una vez al día, al liquidar.</p>"
+            f"<table style='border-collapse:collapse;width:100%;'>{rows}</table>")
 
 
 # ─────────────────────────────────────────────────────
@@ -429,6 +497,7 @@ def build_report(summary: dict, all_entries: list[dict],
         lines += _pnl_table_md("Bot 2: BTC Dirección 1H", pnl["bot2"])
         lines += _pnl_table_md("Bot 3: BTC Scalp 15min", pnl["bot3"])
         lines += _pnl_table_md("Bot 4: Esports", pnl["esports"])
+        lines += _pnl_table_md("Bot 5: BTC Scalp Proporcional (experimento paralelo a Bot 3, fuera del combinado)", pnl["bot5"])
         lines += [
             "*Nota: cada ciclo de señal se cuenta como una apuesta independiente, "
             "sin descontar posiciones repetidas sobre el mismo mercado (Bot 3 sí evita "
@@ -444,6 +513,7 @@ def build_report(summary: dict, all_entries: list[dict],
             "Bot 3: BTC Scalp 15min — desde el veto de momentum (2026-08-03)",
             capital["bot3_post_arreglo"])
         lines += _capital_table_md("Bot 4: Esports", capital["esports"])
+        lines += _capital_table_md("Bot 5: BTC Scalp Proporcional (5% del capital, piso $10 / tope $50)", capital["bot5"])
         lines += [
             "*Nota: no reserva capital para apuestas todavía abiertas — puede mostrar "
             "más exposición simultánea de la que $100 reales permitirían.*",
@@ -646,11 +716,13 @@ def build_report(summary: dict, all_entries: list[dict],
             "",
         ]
 
+    lines += _bot5_md(capital)
+
     lines += [
         "---",
         "",
         "*⚠️ Este reporte es informativo. No constituye asesoría financiera.*",
-        "*Los cuatro bots operan en modo SIMULACIÓN — no se ejecutan apuestas reales.*",
+        "*Todos los bots operan en modo SIMULACIÓN — no se ejecutan apuestas reales.*",
     ]
 
     return title, "\n".join(lines)
@@ -728,6 +800,7 @@ def build_email_html(summary: dict, all_entries: list[dict],
         parts.append(pnl_block("Bot 2: BTC Dirección 1H", pnl["bot2"]))
         parts.append(pnl_block("Bot 3: BTC Scalp 15min", pnl["bot3"]))
         parts.append(pnl_block("Bot 4: Esports", pnl["esports"]))
+        parts.append(pnl_block("Bot 5: BTC Scalp Proporcional (experimento paralelo a Bot 3, fuera del combinado)", pnl["bot5"]))
         parts.append(
             "<p style='color:#999;font-size:12px'>Nota: cada ciclo de señal se cuenta "
             "como una apuesta independiente, sin descontar posiciones repetidas sobre "
@@ -741,6 +814,7 @@ def build_email_html(summary: dict, all_entries: list[dict],
             "Bot 3: BTC Scalp 15min — desde el veto de momentum (2026-08-03)",
             capital["bot3_post_arreglo"]))
         parts.append(capital_block("Bot 4: Esports", capital["esports"]))
+        parts.append(capital_block("Bot 5: BTC Scalp Proporcional (5% del capital, piso $10 / tope $50)", capital["bot5"]))
         parts.append(
             "<p style='color:#999;font-size:12px'>Nota: no reserva capital para apuestas "
             "todavía abiertas — puede mostrar más exposición simultánea de la que $100 "
@@ -881,10 +955,12 @@ def build_email_html(summary: dict, all_entries: list[dict],
     else:
         parts.append("<p>⚪ Sin apuestas en las últimas 24h.</p>")
 
+    parts.append(_bot5_html(capital))
+
     parts += [
         "<hr>",
         "<p style='color:#999;font-size:12px'>⚠️ Este reporte es informativo. No constituye asesoría "
-        "financiera. Los cuatro bots operan en modo SIMULACIÓN — no se ejecutan apuestas reales.</p>",
+        "financiera. Todos los bots operan en modo SIMULACIÓN — no se ejecutan apuestas reales.</p>",
         "</div>",
     ]
     return "\n".join(parts)
