@@ -70,7 +70,7 @@ jobs:
       - name: Recalibrar modelo con resultados reales (no-op si aún no hay datos suficientes)
         run: python retrain_model.py
 
-      - name: Guardar pesos reajustados en el repositorio
+      - name: Guardar pesos y calibración reajustados en el repositorio
         run: |
           git config --global user.email "retrain-model@github"
           git config --global user.name "Retrain Model"
@@ -81,10 +81,17 @@ jobs:
           # reintento sobre la base más reciente (mismo motivo que en los
           # otros workflows: evitar que git tenga que reconciliar dos
           # versiones divergentes del archivo).
+          #
+          # esports_calibration.json (calibrador Platt de esports_bot.py)
+          # faltaba aquí: retrain_model.py lo generaba en el runner pero
+          # nunca se commiteaba, así que esports_bot.py jamás lo vio y
+          # siguió usando la probabilidad cruda sin corregir (detectado
+          # 2026-10-09).
           BOT2_CONTENT=$(cat bot2_weights.json 2>/dev/null || true)
           BOT3_CONTENT=$(cat bot3_weights.json 2>/dev/null || true)
+          ESPORTS_CAL_CONTENT=$(cat esports_calibration.json 2>/dev/null || true)
 
-          if [ -z "$BOT2_CONTENT" ] && [ -z "$BOT3_CONTENT" ]; then
+          if [ -z "$BOT2_CONTENT" ] && [ -z "$BOT3_CONTENT" ] && [ -z "$ESPORTS_CAL_CONTENT" ]; then
             echo "Sin pesos generados todavía (no hay datos suficientes), nada que commitear."
             exit 0
           fi
@@ -95,12 +102,14 @@ jobs:
             git reset --hard origin/main
             [ -n "$BOT2_CONTENT" ] && printf '%s' "$BOT2_CONTENT" > bot2_weights.json
             [ -n "$BOT3_CONTENT" ] && printf '%s' "$BOT3_CONTENT" > bot3_weights.json
+            [ -n "$ESPORTS_CAL_CONTENT" ] && printf '%s' "$ESPORTS_CAL_CONTENT" > esports_calibration.json
             # OJO: "git add fileA fileB" aborta TODO el comando (sin agregar
             # nada) si cualquiera de los dos no existe todavía — hay que
             # agregarlos por separado para que uno faltante no bloquee al
             # otro que sí está listo.
             [ -f bot2_weights.json ] && git add bot2_weights.json
             [ -f bot3_weights.json ] && git add bot3_weights.json
+            [ -f esports_calibration.json ] && git add esports_calibration.json
             if git diff --cached --quiet; then
               echo "Sin cambios en los pesos, nada que commitear."
               pushed=1
