@@ -14599,3 +14599,4 @@
 {"timestamp": "2026-10-13T13:35:11.618351+00:00", "action": "SKIP", "reason": "YA_APOSTADO", "market_id": "5605318"}
 {"timestamp": "2026-10-13T13:40:15.394603+00:00", "action": "SKIP", "reason": "YA_APOSTADO", "market_id": "5605318"}
 {"timestamp": "2026-10-13T13:45:12.884840+00:00", "action": "NO_MARKET"}
+{"timestamp": "2026-10-13T13:50:14.077423+00:00", "action": "NO_MARKET"}
