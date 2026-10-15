@@ -1578,3 +1578,4 @@
 {"timestamp": "2026-10-15T01:00:11.062811+00:00", "action": "PASS", "bet_side": null, "bet_usd": 0, "our_prob": 0.7536, "market_prob": 0.645, "edge": 0.1086, "conviccion_propia": 0.2536, "contra_momentum": false, "btc_price": 81680.63, "rsi": 67.26, "ema_diff": 35.47, "window_momentum": 0.089, "market_id": "5676394", "market_q": "Bitcoin Up or Down - October 14, 9:00PM-9:15PM ET", "used_model": true}
 {"timestamp": "2026-10-15T01:05:09.912441+00:00", "action": "PASS", "bet_side": null, "bet_usd": 0, "our_prob": 0.9233, "market_prob": 0.815, "edge": 0.1083, "conviccion_propia": 0.4233, "contra_momentum": false, "btc_price": 81782.01, "rsi": 71.26, "ema_diff": 68.68, "window_momentum": 0.2132, "market_id": "5676394", "market_q": "Bitcoin Up or Down - October 14, 9:00PM-9:15PM ET", "used_model": true}
 {"timestamp": "2026-10-15T01:10:09.063061+00:00", "action": "NO_MARKET"}
+{"timestamp": "2026-10-15T01:15:08.910203+00:00", "action": "NO_MARKET"}
