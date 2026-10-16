@@ -2001,3 +2001,4 @@
 {"timestamp": "2026-10-16T11:35:09.001256+00:00", "action": "PASS", "bet_side": null, "bet_usd": 0, "our_prob": 0.8906000000000001, "market_prob": 0.765, "edge": 0.1256, "conviccion_propia": 0.3906, "contra_momentum": false, "btc_price": 82764.0, "rsi": 40.91, "ema_diff": 7.86, "window_momentum": -0.1659, "market_id": "5727395", "market_q": "Bitcoin Up or Down - October 16, 7:30AM-7:45AM ET", "used_model": true}
 {"timestamp": "2026-10-16T11:39:31.827120+00:00", "action": "NO_MARKET"}
 {"timestamp": "2026-10-16T11:40:09.315601+00:00", "action": "NO_MARKET"}
+{"timestamp": "2026-10-16T11:45:09.853468+00:00", "action": "NO_MARKET"}
