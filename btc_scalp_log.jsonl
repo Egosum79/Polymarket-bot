@@ -16735,3 +16735,4 @@
 {"timestamp": "2026-10-20T19:50:15.081364+00:00", "action": "NO_MARKET"}
 {"timestamp": "2026-10-20T19:55:13.275779+00:00", "action": "NO_MARKET"}
 {"timestamp": "2026-10-20T20:00:17.760257+00:00", "action": "BET", "bet_side": "DOWN", "bet_usd": 10.0, "our_prob": 0.6376, "market_prob": 0.405, "edge": 0.2326, "conviccion_propia": 0.1376, "contra_momentum": false, "btc_price": 82582.0, "rsi": 41.75, "ema_diff": -3.99, "window_momentum": -0.0412, "market_id": "5939054", "market_q": "Bitcoin Up or Down - October 20, 4:00PM-4:15PM ET", "used_model": true}
+{"timestamp": "2026-10-20T20:05:12.115309+00:00", "action": "SKIP", "reason": "YA_APOSTADO", "market_id": "5939054"}
