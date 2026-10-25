@@ -2100,3 +2100,4 @@
 {"timestamp": "2026-10-25T19:00:16.639976+00:00", "action": "PASS", "bet_side": null, "bet_usd": 0, "our_prob": 0.4897, "market_prob": 0.445, "edge": 0.0447, "conviccion_propia": 0.0103, "btc_price": 80666.69, "rsi": 51.68, "ema_signal": "UP", "macd_signal": "UP", "strength": 0.667, "momentum_1h": 0.0, "market_id": "6152281", "market_q": "Bitcoin Up or Down - October 25, 3:00PM-3:15PM ET", "used_model": true}
 {"timestamp": "2026-10-25T20:00:18.284582+00:00", "action": "NO_MARKET", "btc_price": 80567.53, "rsi": 52.04, "ema_signal": "UP", "macd_signal": "UP", "momentum_1h": 0.0}
 {"timestamp": "2026-10-25T20:38:52.842396+00:00", "action": "SKIP", "reason": "NEUTRAL", "btc_price": 80546.0, "rsi": 51.41, "ema_signal": "DOWN", "macd_signal": "UP", "momentum_1h": -0.027}
+{"timestamp": "2026-10-25T21:00:17.762666+00:00", "action": "SKIP", "reason": "NEUTRAL", "btc_price": 80492.86, "rsi": 44.54, "ema_signal": "DOWN", "macd_signal": "UP", "momentum_1h": 0.0}
