@@ -5242,3 +5242,4 @@
 {"timestamp": "2026-10-27T12:10:11.096927+00:00", "action": "NO_MARKET"}
 {"timestamp": "2026-10-27T12:15:09.431477+00:00", "action": "BET", "bet_side": "UP", "bet_usd": 10.49, "our_prob": 0.7332, "market_prob": 0.495, "edge": 0.2382, "conviccion_propia": 0.2332, "contra_momentum": false, "btc_price": 79938.84, "rsi": 78.4, "ema_diff": 16.23, "window_momentum": 0.0621, "market_id": "6248576", "market_q": "Bitcoin Up or Down - October 27, 8:15AM-8:30AM ET", "used_model": true}
 {"timestamp": "2026-10-27T12:20:11.311840+00:00", "action": "NO_MARKET"}
+{"timestamp": "2026-10-27T12:25:10.610205+00:00", "action": "NO_MARKET"}
