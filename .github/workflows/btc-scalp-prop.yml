@@ -30,36 +30,49 @@ jobs:
           git config --global user.name "BTC Scalp Prop Bot"
 
           LOG=btc_scalp_prop_log.jsonl
+          BOOK=btc_scalp_prop_book.jsonl   # profundidad del libro en cada apuesta (solo existe tras la primera apuesta)
 
           # Misma estrategia anti-conflictos que btc-scalp.yml: capturar SOLO
-          # la línea nueva de este ciclo y reaplicarla sobre la base más
+          # las líneas nuevas de este ciclo y reaplicarlas sobre la base más
           # reciente en cada intento (ver ese workflow para el porqué).
           #
           # Diferencia: "git diff" no ve archivos que todavía no existen en el
-          # repo, así que en el PRIMER ciclo (log aún sin trackear) habría
-          # dicho "sin cambios" y la apuesta se perdía en silencio. Si el
+          # repo, así que en el PRIMER ciclo (archivo aún sin trackear) habría
+          # dicho "sin cambios" y la línea se perdía en silencio. Si el
           # archivo no está trackeado, se toma su contenido completo.
-          if git ls-files --error-unmatch "$LOG" >/dev/null 2>&1; then
-            NEW_CONTENT=$(git diff -- "$LOG" | grep '^+' | grep -v '^+++' | sed 's/^+//')
-          else
-            NEW_CONTENT=$(cat "$LOG" 2>/dev/null || true)
-          fi
+          capturar() {
+            if git ls-files --error-unmatch "$1" >/dev/null 2>&1; then
+              git diff -- "$1" | grep '^+' | grep -v '^+++' | sed 's/^+//' || true
+            else
+              cat "$1" 2>/dev/null || true
+            fi
+          }
+          NEW_LOG=$(capturar "$LOG")
+          NEW_BOOK=$(capturar "$BOOK")
 
-          if [ -z "$NEW_CONTENT" ]; then
-            echo "Sin cambios en el log, nada que commitear."
+          if [ -z "$NEW_LOG" ] && [ -z "$NEW_BOOK" ]; then
+            echo "Sin cambios en los logs, nada que commitear."
             exit 0
           fi
+
+          reaplicar() {
+            # $1 = archivo, $2 = contenido nuevo.
+            # "reset --hard" no borra archivos sin trackear: si el archivo aún
+            # no existe en el repo, hay que quitar la copia local o las líneas
+            # nuevas se duplicarían al reaplicarlas.
+            git ls-files --error-unmatch "$1" >/dev/null 2>&1 || rm -f "$1"
+            if [ -n "$2" ]; then
+              printf '%s\n' "$2" >> "$1"
+              git add "$1"
+            fi
+          }
 
           pushed=0
           for i in 1 2 3 4 5 6 7 8; do
             git fetch origin main
             git reset --hard origin/main
-            # "reset --hard" no borra archivos sin trackear: si el log aún no
-            # existe en el repo, hay que quitar la copia local o la línea
-            # nueva se duplicaría al reaplicarla.
-            git ls-files --error-unmatch "$LOG" >/dev/null 2>&1 || rm -f "$LOG"
-            printf '%s\n' "$NEW_CONTENT" >> "$LOG"
-            git add "$LOG"
+            reaplicar "$LOG" "$NEW_LOG"
+            reaplicar "$BOOK" "$NEW_BOOK"
             git commit -m "Scalp Prop cycle $(date '+%Y-%m-%d %H:%M UTC')"
             if git push origin HEAD:main; then
               pushed=1
