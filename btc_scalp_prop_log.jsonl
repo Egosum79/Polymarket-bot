@@ -8388,3 +8388,4 @@
 {"timestamp": "2026-11-19T16:35:18.441363+00:00", "action": "SKIP", "reason": "YA_APOSTADO", "market_id": "7149082"}
 {"timestamp": "2026-11-19T16:40:13.232978+00:00", "action": "SKIP", "reason": "YA_APOSTADO", "market_id": "7149082"}
 {"timestamp": "2026-11-19T16:45:10.475623+00:00", "action": "NO_MARKET"}
+{"timestamp": "2026-11-19T16:50:11.236979+00:00", "action": "NO_MARKET"}
