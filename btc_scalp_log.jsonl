@@ -22363,3 +22363,4 @@
 {"timestamp": "2026-11-21T11:35:12.985353+00:00", "action": "PASS", "bet_side": null, "bet_usd": 0, "our_prob": 0.9419, "market_prob": 0.913, "edge": 0.0289, "conviccion_propia": 0.4419, "contra_momentum": false, "btc_price": 58250.58, "rsi": 67.15, "ema_diff": 146.73, "window_momentum": 0.5609, "market_id": "7195552", "market_q": "Bitcoin Up or Down - November 21, 6:30AM-6:45AM ET", "used_model": true}
 {"timestamp": "2026-11-21T11:40:12.689504+00:00", "action": "NO_MARKET"}
 {"timestamp": "2026-11-21T11:44:35.080695+00:00", "action": "NO_MARKET"}
+{"timestamp": "2026-11-21T11:45:13.583275+00:00", "action": "NO_MARKET"}
