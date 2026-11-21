@@ -22321,3 +22321,4 @@
 {"timestamp": "2026-11-21T08:05:13.779467+00:00", "action": "SKIP", "reason": "YA_APOSTADO", "market_id": "7193813"}
 {"timestamp": "2026-11-21T08:10:14.004540+00:00", "action": "SKIP", "reason": "YA_APOSTADO", "market_id": "7193813"}
 {"timestamp": "2026-11-21T08:15:12.601896+00:00", "action": "NO_MARKET"}
+{"timestamp": "2026-11-21T08:20:14.043189+00:00", "action": "NO_MARKET"}
