@@ -22668,3 +22668,4 @@
 {"timestamp": "2026-11-22T12:35:12.738417+00:00", "action": "SKIP", "reason": "YA_APOSTADO", "market_id": "7222764"}
 {"timestamp": "2026-11-22T12:40:12.941787+00:00", "action": "SKIP", "reason": "YA_APOSTADO", "market_id": "7222764"}
 {"timestamp": "2026-11-22T12:45:13.340208+00:00", "action": "NO_MARKET"}
+{"timestamp": "2026-11-22T12:50:13.567151+00:00", "action": "NO_MARKET"}
