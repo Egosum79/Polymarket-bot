@@ -221,15 +221,18 @@ def analyze_pnl(settlements: list[dict]) -> dict:
     bot3 = [s for s in settlements if s.get("bot") == "bot3"]
     esports = [s for s in settlements if s.get("bot") == "esports"]
     bot5 = [s for s in settlements if s.get("bot") == "bot5"]
+    bot6 = [s for s in settlements if s.get("bot") == "bot6"]
     return {
         "bot1":     _summarize_settlements(bot1),
         "bot2":     _summarize_settlements(bot2),
         "bot3":     _summarize_settlements(bot3),
         "esports":  _summarize_settlements(esports),
         "bot5":     _summarize_settlements(bot5),
-        # Bot 5 replica las señales de Bot 3 con otra apuesta: sumarlo aquí
-        # duplicaría esas señales en el total, así que queda fuera.
-        "combined": _summarize_settlements([s for s in settlements if s.get("bot") != "bot5"]),
+        "bot6":     _summarize_settlements(bot6),
+        # Bot 5 y Bot 6 replican las señales de Bot 3 (con otra apuesta / otro
+        # precio de entrada): sumarlos aquí duplicaría esas señales en el
+        # total, así que quedan fuera.
+        "combined": _summarize_settlements([s for s in settlements if s.get("bot") not in ("bot5", "bot6")]),
     }
 
 
@@ -279,6 +282,7 @@ def compute_capital(settlements: list[dict], initial: float = CAPITAL_INICIAL) -
     esports = [s for s in settlements if s.get("bot") == "esports"]
     bot3_post_arreglo = [s for s in bot3 if (s.get("timestamp") or "") >= BOT3_ARREGLO_MOMENTUM_TS]
     bot5 = [s for s in settlements if s.get("bot") == "bot5"]
+    bot6 = [s for s in settlements if s.get("bot") == "bot6"]
     return {
         "bot1":    curve(bot1),
         "bot2":    curve(bot2),
@@ -286,6 +290,7 @@ def compute_capital(settlements: list[dict], initial: float = CAPITAL_INICIAL) -
         "bot3_post_arreglo": curve(bot3_post_arreglo),
         "esports": curve(esports),
         "bot5":    curve(bot5),
+        "bot6":    curve(bot6),
     }
 
 
@@ -330,6 +335,64 @@ def _bot5_md(capital: dict) -> list[str]:
         f"| Total histórico en log | {len(entries)} |",
         "",
     ]
+
+
+def _bot6_data(capital: dict):
+    entries = load_log("btc_scalp_clob_log.jsonl")
+    ult = entries_last_24h(entries)
+    resumen = analyze_btc(ult)
+    # Brecha entre el ask real del libro (lado UP) y el precio de Gamma con el
+    # que deciden Bot 3/5: es lo que este bot existe para medir.
+    brechas = [(e["ask_up"] - e["gamma_prob_up"]) * 100 for e in ult
+               if e.get("ask_up") is not None and e.get("gamma_prob_up") is not None]
+    brecha = sum(brechas) / len(brechas) if brechas else None
+    sin_libro = sum(1 for e in ult if e.get("action") == "NO_LIBRO")
+    return entries, resumen, capital["bot6"]["current"], brecha, sin_libro
+
+
+def _bot6_md(capital: dict) -> list[str]:
+    entries, r, cap, brecha, sin_libro = _bot6_data(capital)
+    brecha_txt = f"{brecha:+.1f}¢" if brecha is not None else "sin datos"
+    return [
+        "---",
+        "",
+        "## 🧪 Bot 6: BTC Scalp con precios del libro real (btc_scalp_clob_log.jsonl)",
+        "",
+        "*Misma señal que Bot 3, pero la ventaja y el precio de entrada salen del libro de "
+        "órdenes real (CLOB), con deslizamiento y comisión incluidos. Apuesta fija de $10. "
+        "Responde si la ventaja de Bot 3/5 sobrevive al precio realmente pagado.*",
+        "",
+        "| Métrica | Valor |",
+        "|---------|-------|",
+        f"| Capital simulado actual | {_usd(cap)} |",
+        f"| Total ciclos (últimas 24h) | {r['total']} |",
+        f"| 🟢 Apuestas UP | {r['bets_up']} |",
+        f"| 🔴 Apuestas DOWN | {r['bets_down']} |",
+        f"| Brecha media ask UP real − precio Gamma (24h) | {brecha_txt} |",
+        f"| Ciclos sin lectura del libro (24h) | {sin_libro} |",
+        f"| Total histórico en log | {len(entries)} |",
+        "",
+    ]
+
+
+def _bot6_html(capital: dict) -> str:
+    entries, r, cap, brecha, sin_libro = _bot6_data(capital)
+    brecha_txt = f"{brecha:+.1f}¢" if brecha is not None else "sin datos"
+    filas = [
+        ("Capital simulado actual", _usd(cap)),
+        ("Total ciclos (últimas 24h)", str(r["total"])),
+        ("🟢 Apuestas UP", str(r["bets_up"])),
+        ("🔴 Apuestas DOWN", str(r["bets_down"])),
+        ("Brecha media ask UP real − precio Gamma (24h)", brecha_txt),
+        ("Ciclos sin lectura del libro (24h)", str(sin_libro)),
+        ("Total histórico en log", str(len(entries))),
+    ]
+    rows = "".join(_table_row([a, b]) for a, b in filas)
+    return ("<hr><h3>🧪 Bot 6: BTC Scalp con precios del libro real</h3>"
+            "<p style='color:#555;font-size:13px'>Misma señal que Bot 3, pero entra al precio real "
+            "del libro (CLOB) con deslizamiento y comisión. Apuesta fija de $10. Mide si la ventaja "
+            "de Bot 3/5 sobrevive al precio realmente pagado.</p>"
+            f"<table style='border-collapse:collapse;width:100%;'>{rows}</table>")
 
 
 def _bot5_html(capital: dict) -> str:
@@ -498,6 +561,7 @@ def build_report(summary: dict, all_entries: list[dict],
         lines += _pnl_table_md("Bot 3: BTC Scalp 15min", pnl["bot3"])
         lines += _pnl_table_md("Bot 4: Esports", pnl["esports"])
         lines += _pnl_table_md("Bot 5: BTC Scalp Proporcional (experimento paralelo a Bot 3, fuera del combinado)", pnl["bot5"])
+        lines += _pnl_table_md("Bot 6: BTC Scalp con precios del libro real (experimento paralelo, fuera del combinado)", pnl["bot6"])
         lines += [
             "*Nota: cada ciclo de señal se cuenta como una apuesta independiente, "
             "sin descontar posiciones repetidas sobre el mismo mercado (Bot 3 sí evita "
@@ -514,6 +578,7 @@ def build_report(summary: dict, all_entries: list[dict],
             capital["bot3_post_arreglo"])
         lines += _capital_table_md("Bot 4: Esports", capital["esports"])
         lines += _capital_table_md("Bot 5: BTC Scalp Proporcional (5% del capital, piso $10 / tope $50)", capital["bot5"])
+        lines += _capital_table_md("Bot 6: BTC Scalp con precios del libro real ($10 fijos)", capital["bot6"])
         lines += [
             "*Nota: no reserva capital para apuestas todavía abiertas — puede mostrar "
             "más exposición simultánea de la que $100 reales permitirían.*",
@@ -717,6 +782,7 @@ def build_report(summary: dict, all_entries: list[dict],
         ]
 
     lines += _bot5_md(capital)
+    lines += _bot6_md(capital)
 
     lines += [
         "---",
@@ -801,6 +867,7 @@ def build_email_html(summary: dict, all_entries: list[dict],
         parts.append(pnl_block("Bot 3: BTC Scalp 15min", pnl["bot3"]))
         parts.append(pnl_block("Bot 4: Esports", pnl["esports"]))
         parts.append(pnl_block("Bot 5: BTC Scalp Proporcional (experimento paralelo a Bot 3, fuera del combinado)", pnl["bot5"]))
+        parts.append(pnl_block("Bot 6: BTC Scalp con precios del libro real (experimento paralelo, fuera del combinado)", pnl["bot6"]))
         parts.append(
             "<p style='color:#999;font-size:12px'>Nota: cada ciclo de señal se cuenta "
             "como una apuesta independiente, sin descontar posiciones repetidas sobre "
@@ -815,6 +882,7 @@ def build_email_html(summary: dict, all_entries: list[dict],
             capital["bot3_post_arreglo"]))
         parts.append(capital_block("Bot 4: Esports", capital["esports"]))
         parts.append(capital_block("Bot 5: BTC Scalp Proporcional (5% del capital, piso $10 / tope $50)", capital["bot5"]))
+        parts.append(capital_block("Bot 6: BTC Scalp con precios del libro real ($10 fijos)", capital["bot6"]))
         parts.append(
             "<p style='color:#999;font-size:12px'>Nota: no reserva capital para apuestas "
             "todavía abiertas — puede mostrar más exposición simultánea de la que $100 "
@@ -956,6 +1024,7 @@ def build_email_html(summary: dict, all_entries: list[dict],
         parts.append("<p>⚪ Sin apuestas en las últimas 24h.</p>")
 
     parts.append(_bot5_html(capital))
+    parts.append(_bot6_html(capital))
 
     parts += [
         "<hr>",

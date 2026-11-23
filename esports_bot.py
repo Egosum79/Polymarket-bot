@@ -38,6 +38,12 @@ PANDASCORE_MATCHES_URL = "https://api.pandascore.co/matches"   # OJO: es .co, no
 LOG_FILE = "esports_bot_log.jsonl"
 CALIBRATION_FILE = "esports_calibration.json"
 
+# PAUSADO (2026-11-18): True = el bot no evalua ni apuesta. Motivo: 3,500+
+# apuestas simuladas sin ventaja comprobada (capital simulado en negativo,
+# -$147 en un dia el 17 nov). Para reactivarlo, cambiar a False y subir el
+# archivo. Las apuestas ya registradas se siguen liquidando (settle_bets.py).
+PAUSADO = True
+
 EDGE_MINIMO = 0.07
 BET_USD = 8.0
 MIN_LIQUIDITY = 5000.0
@@ -683,6 +689,12 @@ def main():
     parser = argparse.ArgumentParser(description="Bot de esports para Polymarket")
     parser.add_argument("--real", action="store_true", help="Ejecuta ordenes reales via py-clob-client")
     args = parser.parse_args()
+
+    if PAUSADO:
+        # Salida inmediata: no consulta APIs, no apuesta y no escribe en el log,
+        # asi que el workflow termina con "Sin cambios en el log" y no commitea.
+        print("Bot 4 (esports) PAUSADO -- ver PAUSADO en esports_bot.py. No se evalua ni apuesta nada.")
+        return
 
     try:
         ejecutar_ciclo(modo_real=args.real)

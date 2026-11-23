@@ -59,6 +59,7 @@ BOT2_LOG          = "btc_bot_log.jsonl"
 BOT3_LOG          = "btc_scalp_log.jsonl"
 BOT4_LOG          = "esports_bot_log.jsonl"
 BOT5_LOG          = "btc_scalp_prop_log.jsonl"   # Bot 5: mismo formato que Bot 3, apuesta proporcional
+BOT6_LOG          = "btc_scalp_clob_log.jsonl"   # Bot 6: mismo formato; market_prob = costo efectivo (vwap del libro + comisión)
 
 
 def fetch(url: str, retries: int = 3, backoff: float = 2.0):
@@ -167,7 +168,8 @@ def settle_updown_bot(entries: list[dict], bot_name: str, already_settled: set) 
     """
     Liquida logs con bet_side UP/DOWN (UP↔YES, DOWN↔NO en el mercado 'Up or
     Down'). Usado por btc_direction_bot.py (bot2), btc_scalp_bot.py (bot3) y
-    btc_scalp_prop_bot.py (bot5): los tres comparten el mismo formato de log.
+    btc_scalp_prop_bot.py (bot5) y btc_scalp_clob_bot.py (bot6): comparten el
+    mismo formato de log.
     """
     results = []
     for e in entries:
@@ -260,12 +262,14 @@ def main():
     bot3_entries = load_jsonl(BOT3_LOG)
     bot4_entries = load_jsonl(BOT4_LOG)
     bot5_entries = load_jsonl(BOT5_LOG)
+    bot6_entries = load_jsonl(BOT6_LOG)
 
     new_results = (settle_bot1(bot1_entries, already_settled)
                    + settle_updown_bot(bot2_entries, "bot2", already_settled)
                    + settle_updown_bot(bot3_entries, "bot3", already_settled)
                    + settle_esports(bot4_entries, already_settled)
-                   + settle_updown_bot(bot5_entries, "bot5", already_settled))
+                   + settle_updown_bot(bot5_entries, "bot5", already_settled)
+                   + settle_updown_bot(bot6_entries, "bot6", already_settled))
 
     print(f"  Apuestas liquidadas previamente: {len(settled_so_far)}")
     print(f"  Mercados aún pendientes de resolver o recién liquidados: revisando...")
