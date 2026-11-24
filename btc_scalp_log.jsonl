@@ -23345,3 +23345,4 @@
 {"timestamp": "2026-11-24T20:35:13.702118+00:00", "action": "SKIP", "reason": "YA_APOSTADO", "market_id": "7292226"}
 {"timestamp": "2026-11-24T20:40:13.751398+00:00", "action": "SKIP", "reason": "YA_APOSTADO", "market_id": "7292226"}
 {"timestamp": "2026-11-24T20:45:15.404406+00:00", "action": "NO_MARKET"}
+{"timestamp": "2026-11-24T20:50:14.917437+00:00", "action": "NO_MARKET"}
