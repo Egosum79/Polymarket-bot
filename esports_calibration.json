@@ -1,6 +1,6 @@
 {
   "calibrador": "esports",
-  "trained_at": "2026-11-26T20:06:43.555109+00:00",
+  "trained_at": "2026-11-27T19:55:40.963360+00:00",
   "n_samples": 3690,
   "feature": "logit(p_cruda_lado_apostado)",
   "l2": 0.0,
