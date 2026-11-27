@@ -952,3 +952,4 @@
 {"timestamp": "2026-11-27T01:40:11.505289+00:00", "action": "PASS", "reason": "CONTRA_MOMENTUM", "bet_side": null, "bet_usd": 0, "our_prob_up": 0.1869, "our_prob": 0.1869, "market_prob": 0.0639, "fill_vwap": 0.06, "fee_per_share": 0.0039, "edge_neto": 0.123, "lado_evaluado": "UP", "ask_up": 0.06, "ask_down": 0.95, "bid_up": 0.05, "bid_down": 0.94, "gamma_prob_up": 0.065, "conviccion_propia": 0.3131, "contra_momentum": true, "btc_price": 60699.29, "rsi": 39.1, "ema_diff": -19.46, "window_momentum": -0.1562, "market_id": "7361725", "market_q": "Bitcoin Up or Down - November 26, 8:30PM-8:45PM ET", "market_end": "2026-11-27T01:45:00Z", "used_model": true}
 {"timestamp": "2026-11-27T01:45:17.261059+00:00", "action": "NO_MARKET"}
 {"timestamp": "2026-11-27T01:50:10.828513+00:00", "action": "NO_MARKET"}
+{"timestamp": "2026-11-27T01:55:15.467930+00:00", "action": "NO_MARKET"}
